@@ -1,0 +1,227 @@
+import { GRID_METERS, WORLD_X_MIN, WORLD_Y_SOUTH } from "./coords";
+import type { MapEntity } from "./types";
+
+const OX = WORLD_X_MIN + 2 * GRID_METERS + 420; // Grass Fields (X2 Y0)
+const OY = WORLD_Y_SOUTH - 380;
+
+let seq = 0;
+function id(prefix: string): string {
+  seq += 1;
+  return `demo:${prefix}:${seq}`;
+}
+
+function machine(
+  type: string,
+  category: MapEntity["category"],
+  x: number,
+  y: number,
+  yaw: number,
+  w: number,
+  h: number,
+  extra?: Partial<MapEntity>,
+): MapEntity {
+  return {
+    id: extra?.id ?? id(type),
+    type,
+    category,
+    x,
+    y,
+    z: extra?.z ?? 0,
+    yaw,
+    w,
+    h,
+    recipe: extra?.recipe,
+    label: extra?.label,
+    path: extra?.path,
+  };
+}
+
+function belt(x0: number, y0: number, x1: number, y1: number, mk = 1): MapEntity {
+  return machine(`ConveyorBeltMk${mk}`, "logistics", x0, y0, 0, 2, 2, {
+    path: [
+      [x0, y0],
+      [x1, y1],
+    ],
+  });
+}
+
+function foundationGrid(count: number): MapEntity[] {
+  const out: MapEntity[] = [];
+  const cols = 12;
+  const rows = Math.ceil(count / cols);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (out.length >= count) return out;
+      out.push(
+        machine("Foundation_8x4_01", "organization", OX + c * 8, OY + r * 8, 0, 8, 8, {
+          id: `demo:foundation:${r}:${c}`,
+        }),
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * A growing Grass Fields starter factory. Each tick adds machines so the live
+ * delta pipeline is visible without a real save file.
+ */
+export function buildDemoWorld(tick: number): MapEntity[] {
+  seq = 1000;
+  const t = Math.max(0, tick);
+  const entities: MapEntity[] = [];
+
+  entities.push(
+    machine("Hub", "special", OX + 8, OY - 24, 0, 20, 16, {
+      id: "demo:hub",
+      label: "The HUB",
+    }),
+    machine("SpaceElevator", "special", OX + 90, OY - 80, 15, 28, 28, {
+      id: "demo:elevator",
+      label: "Space Elevator",
+    }),
+    machine("Char_Player", "player", OX + 12 + Math.sin(t / 2) * 18, OY - 10 + Math.cos(t / 3) * 8, t * 25, 2, 2, {
+      id: "demo:player",
+      label: "Pioneer",
+    }),
+  );
+
+  const foundationCount = Math.min(96, 24 + t * 4);
+  entities.push(...foundationGrid(foundationCount));
+
+  const minerCount = Math.min(3, 1 + Math.floor(t / 2));
+  for (let i = 0; i < minerCount; i++) {
+    const mx = OX - 40;
+    const my = OY + 8 + i * 22;
+    entities.push(
+      machine("MinerMk1", "extraction", mx, my, 90, 16, 16, {
+        id: `demo:miner:${i}`,
+        recipe: "Iron Ore",
+      }),
+    );
+    entities.push(belt(mx + 10, my, OX - 4, my, 1));
+  }
+
+  const smelterCount = Math.min(8, 2 + t);
+  for (let i = 0; i < smelterCount; i++) {
+    const col = i % 4;
+    const row = Math.floor(i / 4);
+    const sx = OX + 4 + col * 12;
+    const sy = OY + 8 + row * 18;
+    entities.push(
+      machine("SmelterMk1", "production", sx, sy, 0, 6, 9, {
+        id: `demo:smelter:${i}`,
+        recipe: "Iron Ingot",
+      }),
+    );
+    if (i < minerCount) {
+      entities.push(belt(OX - 4, OY + 8 + i * 22, sx - 4, sy, 1));
+    }
+    entities.push(belt(sx + 4, sy, sx + 16, sy, 1));
+  }
+
+  const constructorCount = Math.min(10, Math.max(0, t - 1));
+  for (let i = 0; i < constructorCount; i++) {
+    const col = i % 5;
+    const row = Math.floor(i / 5);
+    const cx = OX + 28 + col * 14;
+    const cy = OY + 8 + row * 20;
+    entities.push(
+      machine("ConstructorMk1", "production", cx, cy, 0, 8, 10, {
+        id: `demo:constructor:${i}`,
+        recipe: i % 2 === 0 ? "Iron Plate" : "Iron Rod",
+      }),
+    );
+    entities.push(belt(cx + 6, cy, cx + 18, cy, 2));
+  }
+
+  if (t >= 3) {
+    entities.push(
+      machine("StorageContainerMk1", "logistics", OX + 96, OY + 16, 0, 5, 5, {
+        id: "demo:storage:0",
+      }),
+      machine("StorageContainerMk1", "logistics", OX + 96, OY + 28, 0, 5, 5, {
+        id: "demo:storage:1",
+      }),
+    );
+    entities.push(belt(OX + 90, OY + 16, OX + 93, OY + 16, 2));
+    entities.push(belt(OX + 90, OY + 28, OX + 93, OY + 28, 2));
+  }
+
+  const poleCount = Math.min(12, 4 + t);
+  for (let i = 0; i < poleCount; i++) {
+    const px = OX + (i % 6) * 16;
+    const py = OY + 48 + Math.floor(i / 6) * 16;
+    entities.push(
+      machine("PowerPoleMk1", "power", px, py, 0, 1.5, 1.5, {
+        id: `demo:pole:${i}`,
+      }),
+    );
+    if (i > 0) {
+      const prevX = OX + ((i - 1) % 6) * 16;
+      const prevY = OY + 48 + Math.floor((i - 1) / 6) * 16;
+      entities.push(
+        machine("PowerLine", "power", prevX, prevY, 0, 1, 1, {
+          id: `demo:line:${i}`,
+          path: [
+            [prevX, prevY],
+            [px, py],
+          ],
+        }),
+      );
+    }
+  }
+
+  if (t >= 4) {
+    entities.push(
+      machine("GeneratorBiomass_C", "power", OX + 8, OY + 64, 180, 8, 8, {
+        id: "demo:biomass",
+        recipe: "Leaves",
+      }),
+      machine("GeneratorCoal_C", "power", OX + 24, OY + 64, 180, 16, 16, {
+        id: "demo:coal",
+        recipe: "Coal",
+      }),
+    );
+  }
+
+  if (t >= 6) {
+    entities.push(
+      machine("AssemblerMk1", "production", OX + 40, OY + 72, 0, 10, 15, {
+        id: "demo:assembler:0",
+        recipe: "Reinforced Iron Plate",
+      }),
+      machine("Tractor", "vehicle", OX - 12, OY - 8, 40 + t * 8, 6, 10, {
+        id: "demo:tractor",
+        label: "Tractor",
+      }),
+    );
+  }
+
+  if (t >= 8) {
+    entities.push(
+      machine("WaterPump", "extraction", OX - 70, OY + 40, 0, 12, 12, {
+        id: "demo:water",
+      }),
+      machine("PipelineMk1", "logistics", OX - 70, OY + 40, 0, 1, 1, {
+        id: "demo:pipe",
+        path: [
+          [OX - 70, OY + 40],
+          [OX - 20, OY + 40],
+          [OX - 20, OY + 64],
+          [OX + 8, OY + 64],
+        ],
+      }),
+    );
+  }
+
+  return entities;
+}
+
+export const DEMO_HEADER = {
+  sessionName: "Grass Fields — live demo",
+  mapName: "Persistent_Level",
+  playDurationSeconds: 60 * 47,
+  saveDateTime: new Date().toISOString(),
+  buildVersion: 0,
+};
