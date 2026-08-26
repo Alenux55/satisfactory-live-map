@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { FolderOpen, Globe2, Layers, Radio, RefreshCw, Timer, Upload } from "lucide-react";
+import { FolderOpen, Globe2, Layers, Radio, RefreshCw, Timer, UnfoldVertical, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,12 @@ type Props = {
   config: HubConfig | null;
   layers: Record<EntityCategory, boolean>;
   selected: MapEntity | null;
+  zExtent: { min: number; max: number };
+  zLower: number;
+  zUpper: number;
+  onZLower: (value: number) => void;
+  onZUpper: (value: number) => void;
+  onZReset: () => void;
   useTerrain: boolean;
   terrainReady: boolean;
   onTerrain: (on: boolean) => void;
@@ -42,6 +48,12 @@ export function ControlPanel({
   config,
   layers,
   selected,
+  zExtent,
+  zLower,
+  zUpper,
+  onZLower,
+  onZUpper,
+  onZReset,
   useTerrain,
   terrainReady,
   onTerrain,
@@ -248,6 +260,44 @@ export function ControlPanel({
         </div>
 
         <Separator />
+
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <p className="inline-flex items-center gap-1.5 text-sm font-medium">
+              <UnfoldVertical className="size-3.5" />
+              Height slice
+            </p>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={onZReset}>
+              Full
+            </Button>
+          </div>
+          <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
+            <span>Lower</span>
+            <span className="text-foreground">{zLower.toFixed(0)} m</span>
+          </div>
+          <Slider
+            min={zExtent.min}
+            max={zExtent.max}
+            step={1}
+            value={[zLower]}
+            onValueChange={(value) => onZLower(value[0] ?? zLower)}
+          />
+          <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
+            <span>Upper</span>
+            <span className="text-foreground">{zUpper.toFixed(0)} m</span>
+          </div>
+          <Slider
+            min={zExtent.min}
+            max={zExtent.max}
+            step={1}
+            value={[zUpper]}
+            onValueChange={(value) => onZUpper(value[0] ?? zUpper)}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Hide buildings outside this Z range (sea level is 0). Same idea as SCIM&apos;s height bounds,
+            implemented here on your save data.
+          </p>
+        </div>
 
         <div>
           <p className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium">

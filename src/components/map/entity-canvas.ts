@@ -8,6 +8,7 @@ type LayerFlags = Record<EntityCategory, boolean>;
 export type EntityCanvasHandle = {
   setEntities: (entities: Map<string, MapEntity>) => void;
   setLayers: (layers: LayerFlags) => void;
+  setZRange: (range: { min: number; max: number } | null) => void;
   setSelected: (id: string | null) => void;
   remove: () => void;
 };
@@ -24,10 +25,15 @@ export function attachEntityCanvas(
 
   let entities = new Map<string, MapEntity>();
   let layers: LayerFlags | null = null;
+  let zRange: { min: number; max: number } | null = null;
   let selectedId: string | null = null;
   let destroyed = false;
 
-  const visible = (entity: MapEntity) => !layers || layers[entity.category];
+  const visible = (entity: MapEntity) => {
+    if (layers && !layers[entity.category]) return false;
+    if (zRange && (entity.z < zRange.min || entity.z > zRange.max)) return false;
+    return true;
+  };
 
   const draw = () => {
     const size = map.getSize();
@@ -154,6 +160,10 @@ export function attachEntityCanvas(
     },
     setLayers(next) {
       layers = next;
+      draw();
+    },
+    setZRange(next) {
+      zRange = next;
       draw();
     },
     setSelected(id) {

@@ -61,9 +61,35 @@ export function LiveMap() {
     }
   }, []);
 
+  const zTouchedRef = useRef(false);
+  const [zExtent, setZExtent] = useState({ min: -50, max: 800 });
+  const [zLower, setZLower] = useState(-50);
+  const [zUpper, setZUpper] = useState(800);
+
   const pushEntities = useCallback((next: Map<string, MapEntity>) => {
     entitiesRef.current = next;
     canvasRef.current?.setEntities(next);
+    let min = Infinity;
+    let max = -Infinity;
+    for (const entity of next.values()) {
+      min = Math.min(min, entity.z);
+      max = Math.max(max, entity.z);
+    }
+    if (!Number.isFinite(min)) {
+      min = -50;
+      max = 800;
+    }
+    min = Math.floor(min) - 2;
+    max = Math.ceil(max) + 2;
+    if (max <= min) max = min + 1;
+    setZExtent({ min, max });
+    if (!zTouchedRef.current) {
+      setZLower(min);
+      setZUpper(max);
+    } else {
+      setZLower((lo) => Math.min(Math.max(lo, min), max));
+      setZUpper((hi) => Math.min(Math.max(hi, min), max));
+    }
   }, []);
 
   const loadSnapshot = useCallback(async () => {
@@ -84,6 +110,10 @@ export function LiveMap() {
     layersRef.current = layers;
     canvasRef.current?.setLayers(layers);
   }, [layers]);
+
+  useEffect(() => {
+    canvasRef.current?.setZRange({ min: zLower, max: zUpper });
+  }, [zLower, zUpper]);
 
   useEffect(() => {
     canvasRef.current?.setSelected(selected?.id ?? null);
@@ -238,6 +268,22 @@ export function LiveMap() {
       config={config}
       layers={layers}
       selected={selected}
+      zExtent={zExtent}
+      zLower={zLower}
+      zUpper={zUpper}
+      onZLower={(value) => {
+        zTouchedRef.current = true;
+        setZLower(Math.min(value, zUpper));
+      }}
+      onZUpper={(value) => {
+        zTouchedRef.current = true;
+        setZUpper(Math.max(value, zLower));
+      }}
+      onZReset={() => {
+        zTouchedRef.current = false;
+        setZLower(zExtent.min);
+        setZUpper(zExtent.max);
+      }}
       useTerrain={useTerrain}
       terrainReady={terrainReady}
       onTerrain={setTerrainPref}
