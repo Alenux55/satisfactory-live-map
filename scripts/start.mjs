@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,6 +16,7 @@ process.env.FICSIT_PARSE_CHILD ??= path.join(repoRoot, ".next", "parse-worker", 
 
 const nextCli = path.join(repoRoot, "node_modules", "next", "dist", "bin", "next");
 const port = process.env.PORT;
+const pidPath = path.join(repoRoot, "data", "server.pid");
 
 console.log(
   `${new Date().toISOString()} [INFO] starting next start -H 0.0.0.0 -p ${port}  FICSIT_LOG=${process.env.FICSIT_LOG}  logFile=${process.env.FICSIT_LOG_FILE}`,
@@ -25,11 +26,62 @@ const child = spawn(process.execPath, [nextCli, "start", "-H", "0.0.0.0", "-p", 
   cwd: repoRoot,
   env: process.env,
   stdio: "inherit",
+  windowsHide: true,
 });
 
+function writePid() {
+  writeFileSync(
+    pidPath,
+    JSON.stringify(
+      {
+        starter: process.pid,
+        next: child.pid ?? null,
+        port: Number(port),
+        startedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function clearPid() {
+  try {
+    unlinkSync(pidPath);
+  } catch {
+    // already gone
+  }
+}
+
+writePid();
+if (child.pid == null) {
+  child.once("spawn", writePid);
+}
+
+let shuttingDown = false;
+function shutdown(exitCode = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (child.pid) {
+    try {
+      child.kill();
+    } catch {
+      // already exited
+    }
+  }
+  clearPid();
+  process.exit(exitCode);
+}
+
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));
+process.on("SIGHUP", () => shutdown(0));
+
 child.on("exit", (code, signal) => {
+  clearPid();
+  if (shuttingDown) return;
   if (signal) {
-    process.kill(process.pid, signal);
+    process.exit(1);
     return;
   }
   process.exit(code ?? 1);

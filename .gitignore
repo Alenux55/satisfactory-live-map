@@ -47,6 +47,7 @@ next-env.d.ts
 /data/staging/*
 /data/config.json
 /data/server.log
+/data/server.pid
 /data/world-map.jpg
 /data/world-map.jpg.part
 !/data/saves/.gitkeep

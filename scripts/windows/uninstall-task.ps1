@@ -2,9 +2,4 @@
 param(
   [string]$TaskName = "FICSIT Live Map"
 )
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-Write-Host "Removed scheduled task '$TaskName'."
+& (Join-Path $PSScriptRoot "service.ps1") -Action Uninstall -TaskName $TaskName

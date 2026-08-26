@@ -77,11 +77,12 @@ if ($OpenFirewall) {
 
 if ($InstallTask) {
   try {
-    & (Join-Path $PSScriptRoot "install-task.ps1") -Port $Port
+    & (Join-Path $PSScriptRoot "service.ps1") -Action Install -Port $Port
   } catch {
     Write-Warning "Scheduled task skipped: $_"
   }
 }
 
-Write-Host "`nStart (foreground):  powershell -ExecutionPolicy Bypass -File .\scripts\windows\run.ps1"
+Write-Host "`nService:  powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Install"
+Write-Host "Start (foreground):  powershell -ExecutionPolicy Bypass -File .\scripts\windows\run.ps1"
 Write-Host "From another PC:     http://<this-machine-lan-ip>:$Port"

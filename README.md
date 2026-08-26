@@ -96,15 +96,26 @@ From your desk: `http://<server-lan-ip>:43147`
 
 Confirm **Demo factory** is off and **Save folder** is the DS `SaveGames\server` directory. Set **Update period** to the in-game autosave interval (often **5 minutes**). Do not poll every 5 seconds on the game box.
 
-### 3. Keep it running
+### 3. Keep it running (start / stop / rebuild / boot)
 
-**Task Scheduler (no extra install)** — same Windows account as the DS:
+One script, no extra service manager. Same Windows account as the dedicated server:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-task.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Install
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Status
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Stop
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Start
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Restart
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Rebuild
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Rebuild -Pull
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Uninstall
 ```
 
-Starts at logon and at boot when that account is logged in, restarts on crash. Remove with `scripts\windows\uninstall-task.ps1`.
+`Install` registers a Scheduled Task that starts **at boot** and **at logon**, restarts on crash, then starts the map. `Rebuild` stops it, runs `npm run build`, and starts it again. `-Pull` does `git pull` first.
+
+`data\server.pid` is how Stop finds the Node process (Task Scheduler alone often leaves a grandchild `node` running).
+
+Foreground smoke test is still `scripts\windows\run.ps1`.
 
 **WinSW** — download [WinSW](https://github.com/winsw/winsw/releases), copy `WinSW.exe` into the repo root as `ficsit-live-map.exe`, copy `scripts\windows\ficsit-live-map.xml` next to it as `ficsit-live-map.xml`, then:
 
