@@ -106,7 +106,7 @@ On this PC: [http://127.0.0.1:43147](http://127.0.0.1:43147)
 
 From your desk: `http://<server-lan-ip>:43147`
 
-Confirm **Demo factory** is off and **Save folder** is the DS `SaveGames\server` directory. Folder watch updates on each autosave; keep **Update period** as a slower backup (1–5 minutes). For more frequent writes, `FG.AutosaveInterval 60` on the dedicated server.
+Confirm the sidebar **Server** list includes your dedicated-server save folder (setup writes one from `FICSIT_SAVES_DIR`). **Demo factory** is just another item in that list. Folder watch updates on each autosave; keep **Update period** as a slower backup (1–5 minutes). For more frequent writes, `FG.AutosaveInterval 60` on the dedicated server. Add more save locations with **Add save location** if you run several dedicated servers.
 
 ### 3. Keep it running (start / stop / rebuild / boot)
 
@@ -173,20 +173,22 @@ This process only **reads** saves. It never writes back into SaveGames.
 
 | Variable | Meaning |
 | --- | --- |
-| `FICSIT_SAVES_DIR` | Folder to watch. Sets mode to `watch` if `FICSIT_MODE` is unset |
-| `FICSIT_SAVE_FILE` | Pin one `.sav` instead of newest in the folder |
-| `FICSIT_MODE` | `watch` or `demo` |
+| `FICSIT_SAVES_DIR` | Seeds a watchable server in the catalog (UI can add more) |
+| `FICSIT_SAVE_FILE` | Pin one `.sav` on that seeded server instead of newest in the folder |
+| `FICSIT_MODE` | `watch` ensures a dedicated-server catalog entry exists; Demo is always in the list |
 | `FICSIT_POLL_SECONDS` | Snapped to 5s–10m steps (use **300** on the game box) |
 | `HOSTNAME` / `PORT` | Bind address (scripts use `0.0.0.0:43147`) |
 
-Env wins over `data/config.json` on process start so the service definition stays the source of truth.
+Env is merged into `data/config.json` on process start. Extra servers you add in the UI are kept.
+
+Which server a browser shows is stored in that browser (`ficsit-server`). Two people can watch two different worlds at the same time.
 
 ## Point it at your world (without env)
 
-1. Set **Save folder** in the sidebar to the game’s SaveGames directory (or copy saves into `data/saves`).
-2. Switch **Demo factory** off.
+1. Use **Add save location** (or pick an existing server) and set the SaveGames directory.
+2. Leave **Demo factory** selected only when you want the built-in sample world.
 3. Pick an update period that matches autosave.
-4. Or **Upload .sav** once to inspect a snapshot.
+4. Or **Upload .sav** to add a snapshot as its own server.
 
 Typical client path (Windows):
 

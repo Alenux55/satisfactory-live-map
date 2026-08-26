@@ -14,6 +14,8 @@ import {
 } from "@/lib/world/coords";
 import {
   DEFAULT_LAYERS,
+  DEMO_SERVER_ID,
+  type ConfigPatch,
   type EntityCategory,
   type HubConfig,
   type HubStatus,
@@ -35,6 +37,7 @@ export function LiveMap() {
 
   const [status, setStatus] = useState<HubStatus | null>(null);
   const [config, setConfig] = useState<HubConfig | null>(null);
+  const [serverId, setServerId] = useState(DEMO_SERVER_ID);
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
   const [selected, setSelected] = useState<MapEntity | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
@@ -43,10 +46,24 @@ export function LiveMap() {
   const [terrainReady, setTerrainReady] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
   const overlaysRef = useRef<{ schematic: ImageOverlay; terrain: ImageOverlay | null } | null>(null);
+  const zTouchedRef = useRef(false);
 
   useEffect(() => {
     try {
       if (localStorage.getItem("ficsit-terrain") === "0") setUseTerrain(false);
+      const stored = localStorage.getItem("ficsit-server");
+      if (stored) setServerId(stored);
+    } catch {
+      // private mode
+    }
+  }, []);
+
+  const selectServer = useCallback((id: string) => {
+    setServerId(id);
+    setSelected(null);
+    zTouchedRef.current = false;
+    try {
+      localStorage.setItem("ficsit-server", id);
     } catch {
       // private mode
     }
@@ -61,7 +78,6 @@ export function LiveMap() {
     }
   }, []);
 
-  const zTouchedRef = useRef(false);
   const [zExtent, setZExtent] = useState({ min: -50, max: 800 });
   const [zLower, setZLower] = useState(-50);
   const [zUpper, setZUpper] = useState(800);
@@ -93,18 +109,24 @@ export function LiveMap() {
   }, []);
 
   const loadSnapshot = useCallback(async () => {
-    const response = await fetch("/api/world", { cache: "no-store" });
+    const response = await fetch(`/api/world?server=${encodeURIComponent(serverId)}`, { cache: "no-store" });
+    if (!response.ok) return;
     const snapshot = (await response.json()) as WorldSnapshot;
     revRef.current = snapshot.rev;
     pushEntities(new Map(snapshot.entities.map((entity) => [entity.id, entity])));
-  }, [pushEntities]);
+  }, [pushEntities, serverId]);
 
   const loadConfig = useCallback(async () => {
-    const response = await fetch("/api/config", { cache: "no-store" });
+    const response = await fetch(`/api/config?server=${encodeURIComponent(serverId)}`, { cache: "no-store" });
+    if (!response.ok) return;
     const body = (await response.json()) as { config: HubConfig; status: HubStatus };
     setConfig(body.config);
     setStatus(body.status);
-  }, []);
+    if (!body.config.servers.some((server) => server.id === serverId)) {
+      const fallback = body.config.servers.find((server) => server.kind === "watch")?.id ?? DEMO_SERVER_ID;
+      selectServer(fallback);
+    }
+  }, [selectServer, serverId]);
 
   useEffect(() => {
     layersRef.current = layers;
@@ -216,7 +238,7 @@ export function LiveMap() {
   useEffect(() => {
     void loadSnapshot();
     void loadConfig();
-    const source = new EventSource("/api/world/stream");
+    const source = new EventSource(`/api/world/stream?server=${encodeURIComponent(serverId)}`);
     source.addEventListener("status", (event) => {
       setStatus(JSON.parse((event as MessageEvent).data) as HubStatus);
     });
@@ -235,29 +257,35 @@ export function LiveMap() {
       });
     });
     return () => source.close();
-  }, [loadConfig, loadSnapshot, pushEntities]);
+  }, [loadConfig, loadSnapshot, pushEntities, serverId]);
 
-  const patchConfig = async (patch: Partial<HubConfig>) => {
-    const response = await fetch("/api/config", {
+  const patchConfig = async (patch: ConfigPatch) => {
+    if (patch.removeServerId && patch.removeServerId === serverId) {
+      selectServer(DEMO_SERVER_ID);
+    }
+    const response = await fetch(`/api/config?server=${encodeURIComponent(serverId)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-    const body = (await response.json()) as { config: HubConfig; status: HubStatus };
+    const body = (await response.json()) as { config: HubConfig; status: HubStatus; added?: { id: string } };
     setConfig(body.config);
     setStatus(body.status);
+    if (body.added?.id) selectServer(body.added.id);
   };
 
   const uploadSave = async (file: File) => {
     const form = new FormData();
     form.set("file", file);
-    await fetch("/api/saves", { method: "POST", body: form });
+    const response = await fetch(`/api/saves?server=${encodeURIComponent(serverId)}`, { method: "POST", body: form });
+    const body = (await response.json()) as { serverId?: string };
+    if (body.serverId && body.serverId !== serverId) selectServer(body.serverId);
     await loadSnapshot();
     await loadConfig();
   };
 
   const refresh = async () => {
-    await fetch("/api/world", { method: "POST" });
+    await fetch(`/api/world?server=${encodeURIComponent(serverId)}`, { method: "POST" });
     await loadSnapshot();
     await loadConfig();
   };
@@ -266,6 +294,7 @@ export function LiveMap() {
     <ControlPanel
       status={status}
       config={config}
+      serverId={serverId}
       layers={layers}
       selected={selected}
       zExtent={zExtent}
@@ -288,6 +317,7 @@ export function LiveMap() {
       terrainReady={terrainReady}
       onTerrain={setTerrainPref}
       onLayers={setLayers}
+      onServerId={selectServer}
       onConfig={patchConfig}
       onUpload={uploadSave}
       onRefresh={refresh}

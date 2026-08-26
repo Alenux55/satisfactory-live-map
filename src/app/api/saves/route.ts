@@ -1,4 +1,4 @@
-import { getWorldHub } from "@/lib/world/hub";
+import { getRegistry, serverIdFromRequest } from "@/lib/world/registry";
 import { logger, withRequestLog } from "@/lib/log";
 
 export const dynamic = "force-dynamic";
@@ -7,8 +7,8 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   return withRequestLog("POST", "/api/saves", async () => {
-    const hub = getWorldHub();
-    await hub.whenReady();
+    const registry = getRegistry();
+    await registry.whenReady();
     const form = await request.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
@@ -22,7 +22,8 @@ export async function POST(request: Request) {
     if (bytes.byteLength > 80 * 1024 * 1024) {
       return Response.json({ error: "Save is larger than 80 MB" }, { status: 413 });
     }
-    await hub.ingestUpload(file.name, bytes);
-    return Response.json({ ok: true, status: hub.getStatus() });
+    const serverId = await registry.ingestUpload(serverIdFromRequest(request), file.name, bytes);
+    const hub = registry.getHub(serverId);
+    return Response.json({ ok: true, status: hub.getStatus(), serverId });
   });
 }

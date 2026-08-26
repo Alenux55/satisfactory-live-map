@@ -8,6 +8,23 @@ export function nearestPollInterval(seconds: number): (typeof POLL_INTERVALS_SEC
 
 export type WorldMode = "demo" | "watch";
 
+export const DEMO_SERVER_ID = "demo";
+
+export type ServerEntry = {
+  id: string;
+  name: string;
+  kind: WorldMode;
+  savesDir: string;
+  saveFile: string | null;
+};
+
+export type ConfigPatch = {
+  pollIntervalSeconds?: number;
+  addServer?: { name: string; savesDir: string; saveFile?: string | null };
+  updateServer?: { id: string; name?: string; savesDir?: string; saveFile?: string | null };
+  removeServerId?: string;
+};
+
 export type EntityCategory =
   | "production"
   | "extraction"
@@ -116,13 +133,13 @@ export type HubStatus = {
     removed: number;
     parsedMs: number;
   } | null;
+  serverId: string;
+  serverName: string;
 };
 
 export type HubConfig = {
-  mode: WorldMode;
   pollIntervalSeconds: number;
-  savesDir: string;
-  saveFile: string | null;
+  servers: ServerEntry[];
 };
 
 export const EMPTY_COUNTS: CategoryCounts = {

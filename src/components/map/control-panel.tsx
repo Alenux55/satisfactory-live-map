@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { FolderOpen, Globe2, Layers, Radio, RefreshCw, Timer, UnfoldVertical, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FolderOpen, Globe2, Layers, Plus, Radio, RefreshCw, Server, Timer, Trash2, UnfoldVertical, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,9 @@ import {
 } from "@/lib/world/resource";
 import {
   CATEGORY_LABELS,
+  DEMO_SERVER_ID,
   POLL_INTERVALS_SEC,
+  type ConfigPatch,
   type EntityCategory,
   type HubConfig,
   type HubStatus,
@@ -32,6 +34,7 @@ const CATEGORIES = Object.keys(CATEGORY_LABELS) as EntityCategory[];
 type Props = {
   status: HubStatus | null;
   config: HubConfig | null;
+  serverId: string;
   layers: Record<EntityCategory, boolean>;
   selected: MapEntity | null;
   zExtent: { min: number; max: number };
@@ -44,7 +47,8 @@ type Props = {
   terrainReady: boolean;
   onTerrain: (on: boolean) => void;
   onLayers: (layers: Record<EntityCategory, boolean>) => void;
-  onConfig: (patch: Partial<HubConfig>) => Promise<void>;
+  onServerId: (id: string) => void;
+  onConfig: (patch: ConfigPatch) => Promise<void>;
   onUpload: (file: File) => Promise<void>;
   onRefresh: () => Promise<void>;
 };
@@ -52,6 +56,7 @@ type Props = {
 export function ControlPanel({
   status,
   config,
+  serverId,
   layers,
   selected,
   zExtent,
@@ -64,13 +69,26 @@ export function ControlPanel({
   terrainReady,
   onTerrain,
   onLayers,
+  onServerId,
   onConfig,
   onUpload,
   onRefresh,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [dirDraft, setDirDraft] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [addName, setAddName] = useState("");
+  const [addDir, setAddDir] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const servers = config?.servers ?? [];
+  const current = servers.find((server) => server.id === serverId) ?? servers[0];
+  const isDemo = (current?.id ?? serverId) === DEMO_SERVER_ID;
+
+  useEffect(() => {
+    setDirDraft(null);
+    setNameDraft(null);
+  }, [serverId]);
 
   const intervalIndex = useMemo(() => {
     const seconds = config?.pollIntervalSeconds ?? 15;
@@ -141,17 +159,159 @@ export function ControlPanel({
         </div>
 
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="mode">Demo factory</Label>
-            <Switch
-              id="mode"
-              checked={config?.mode !== "watch"}
-              onCheckedChange={(checked) => onConfig({ mode: checked ? "demo" : "watch" })}
+          <Label htmlFor="server" className="inline-flex items-center gap-1.5">
+            <Server className="size-3.5" />
+            Server
+          </Label>
+          <select
+            id="server"
+            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            value={current?.id ?? serverId}
+            onChange={(event) => onServerId(event.target.value)}
+          >
+            {servers.map((server) => (
+              <option key={server.id} value={server.id}>
+                {server.name}
+                {server.kind === "demo" ? " (demo)" : ""}
+              </option>
+            ))}
+          </select>
+          <Input
+            value={nameDraft ?? current?.name ?? ""}
+            onChange={(event) => setNameDraft(event.target.value)}
+            onBlur={() => {
+              if (nameDraft != null && current && nameDraft.trim() && nameDraft !== current.name) {
+                void onConfig({ updateServer: { id: current.id, name: nameDraft.trim() } });
+              }
+            }}
+            placeholder="Display name"
+          />
+          {isDemo ? (
+            <p className="text-[11px] text-muted-foreground">
+              Built-in Grass Fields factory that grows on the update interval so you can try the map
+              without a dedicated server. Pick another server to watch a real save folder.
+            </p>
+          ) : (
+            <>
+              <Label className="inline-flex items-center gap-1.5">
+                <FolderOpen className="size-3.5" />
+                Save folder
+              </Label>
+              <Input
+                value={dirDraft ?? current?.savesDir ?? ""}
+                onChange={(event) => setDirDraft(event.target.value)}
+                onBlur={() => {
+                  if (dirDraft != null && current && dirDraft !== current.savesDir) {
+                    void onConfig({
+                      updateServer: { id: current.id, savesDir: dirDraft, saveFile: null },
+                    });
+                  }
+                }}
+                placeholder="%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server"
+                className="font-mono text-xs"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Windows dedicated server:{" "}
+                <span className="font-mono">%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server</span>.
+                Newest complete <span className="font-mono">.sav</span> wins. Each server in this list
+                is watched on its own, so two browsers can look at two worlds at once.
+              </p>
+            </>
+          )}
+          <div className="flex gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".sav"
+              className="hidden"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                setBusy(true);
+                try {
+                  await onUpload(file);
+                } finally {
+                  setBusy(false);
+                  event.target.value = "";
+                }
+              }}
             />
+            <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
+              <Upload />
+              Upload .sav
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || isDemo}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await onRefresh();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <RefreshCw />
+              Scan now
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto"
+              disabled={busy || isDemo}
+              onClick={() => {
+                if (!current || isDemo) return;
+                void onConfig({ removeServerId: current.id });
+              }}
+            >
+              <Trash2 />
+              Remove
+            </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            Demo grows a Grass Fields starter on the same interval so you can see deltas without a save.
-          </p>
+          {isDemo ? (
+            <p className="text-[11px] text-muted-foreground">
+              Upload while Demo is selected creates a new server from that snapshot.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col gap-2 rounded-lg border border-border/70 bg-card/50 p-3">
+          <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Add server</p>
+          <Input
+            value={addName}
+            onChange={(event) => setAddName(event.target.value)}
+            placeholder="Name (e.g. Cluster A)"
+          />
+          <Input
+            value={addDir}
+            onChange={(event) => setAddDir(event.target.value)}
+            placeholder="%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server"
+            className="font-mono text-xs"
+          />
+          <Button
+            size="sm"
+            disabled={busy || !addDir.trim()}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onConfig({
+                  addServer: {
+                    name: addName.trim() || "Dedicated server",
+                    savesDir: addDir.trim(),
+                  },
+                });
+                setAddName("");
+                setAddDir("");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <Plus />
+            Add save location
+          </Button>
         </div>
 
         <div className="flex flex-col gap-3">
@@ -198,71 +358,6 @@ export function ControlPanel({
             <span className="font-mono">FG.AutosaveInterval 60</span> (seconds). Below ~30s the DS hitches
             more often; each write still takes a few seconds to parse here.
           </p>
-        </div>
-
-        <Separator />
-
-        <div className="flex flex-col gap-2">
-          <Label className="inline-flex items-center gap-1.5">
-            <FolderOpen className="size-3.5" />
-            Save folder
-          </Label>
-          <Input
-            value={dirDraft ?? config?.savesDir ?? ""}
-            onChange={(event) => setDirDraft(event.target.value)}
-            onBlur={() => {
-              if (dirDraft != null && dirDraft !== config?.savesDir) {
-                void onConfig({ savesDir: dirDraft, saveFile: null, mode: "watch" });
-              }
-            }}
-            placeholder="%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server"
-            className="font-mono text-xs"
-          />
-          <p className="text-[11px] text-muted-foreground">
-            Windows dedicated server:{" "}
-            <span className="font-mono">%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server</span>.
-            Newest complete <span className="font-mono">.sav</span> wins. The watcher copies the file
-            first so a locked autosave does not stall Unreal.
-          </p>
-          <div className="flex gap-2">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".sav"
-              className="hidden"
-              onChange={async (event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                setBusy(true);
-                try {
-                  await onUpload(file);
-                } finally {
-                  setBusy(false);
-                  event.target.value = "";
-                }
-              }}
-            />
-            <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
-              <Upload />
-              Upload .sav
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  await onRefresh();
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              <RefreshCw />
-              Scan now
-            </Button>
-          </div>
         </div>
 
         <Separator />

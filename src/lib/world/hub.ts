@@ -17,28 +17,20 @@ import {
 import {
   EMPTY_COUNTS,
   nearestPollInterval,
-  type HubConfig,
   type HubStatus,
   type MapEntity,
   type SaveHeaderInfo,
+  type ServerEntry,
   type WorldDelta,
   type WorldSnapshot,
   type WorldSource,
 } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
-const CONFIG_PATH = path.join(DATA_DIR, "config.json");
-const DEFAULT_SAVES_DIR = path.join(DATA_DIR, "saves");
+export const DEFAULT_SAVES_DIR = path.join(DATA_DIR, "saves");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 
 type Listener = (event: string, data: unknown) => void;
-
-const DEFAULT_CONFIG: HubConfig = {
-  mode: "demo",
-  pollIntervalSeconds: 15,
-  savesDir: DEFAULT_SAVES_DIR,
-  saveFile: null,
-};
 
 function sha256(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
@@ -61,7 +53,8 @@ export class WorldHub {
   private lastFailedHash = "";
   private lastSize = 0;
   private lastMtime = 0;
-  private config: HubConfig = { ...DEFAULT_CONFIG };
+  private entry: ServerEntry;
+  private pollIntervalSeconds: number;
   private header: SaveHeaderInfo | null = { ...DEMO_HEADER };
   private source: WorldSource | null = null;
   private rev = 0;
@@ -75,8 +68,15 @@ export class WorldHub {
   private lastDelta: HubStatus["lastDelta"] = null;
   private ready: Promise<void>;
 
-  constructor() {
-    logger.info("world hub created", { pid: process.pid, ...memorySnapshot() });
+  constructor(entry: ServerEntry, pollIntervalSeconds: number) {
+    this.entry = { ...entry };
+    this.pollIntervalSeconds = nearestPollInterval(pollIntervalSeconds);
+    logger.info("world hub created", {
+      pid: process.pid,
+      serverId: entry.id,
+      kind: entry.kind,
+      ...memorySnapshot(),
+    });
     this.ready = this.bootstrap();
   }
 
@@ -123,10 +123,10 @@ export class WorldHub {
       progress: this.progress,
       progressMessage: this.progressMessage,
       error: this.error,
-      mode: this.config.mode,
-      pollIntervalSeconds: this.config.pollIntervalSeconds,
-      savesDir: this.config.savesDir,
-      saveFile: this.config.saveFile,
+      mode: this.entry.kind,
+      pollIntervalSeconds: this.pollIntervalSeconds,
+      savesDir: this.entry.savesDir,
+      saveFile: this.entry.saveFile,
       lastTickAt: this.lastTickAt,
       lastChangeAt: this.lastChangeAt,
       skippedUnchanged: this.skippedUnchanged,
@@ -136,51 +136,62 @@ export class WorldHub {
       entityCount: this.entities.size,
       header: this.header,
       lastDelta: this.lastDelta,
+      serverId: this.entry.id,
+      serverName: this.entry.name,
     };
   }
 
-  getConfig(): HubConfig {
-    return { ...this.config };
+  getEntry(): ServerEntry {
+    return { ...this.entry };
   }
 
-  async updateConfig(patch: Partial<HubConfig>): Promise<HubConfig> {
-    if (patch.pollIntervalSeconds != null) {
-      this.config.pollIntervalSeconds = nearestPollInterval(patch.pollIntervalSeconds);
-    }
-    if (patch.savesDir != null && patch.savesDir.trim()) {
-      this.config.savesDir = normalizeFsPath(patch.savesDir);
-    }
-    if (patch.saveFile !== undefined) {
-      this.config.saveFile = patch.saveFile?.trim() ? normalizeFsPath(patch.saveFile) : null;
-    }
-    if (patch.mode && patch.mode !== this.config.mode) {
-      this.config.mode = patch.mode;
+  setPollInterval(seconds: number): void {
+    this.pollIntervalSeconds = nearestPollInterval(seconds);
+    this.restartTimer();
+  }
+
+  applyEntry(entry: ServerEntry): void {
+    const pathChanged =
+      entry.kind !== this.entry.kind ||
+      entry.savesDir !== this.entry.savesDir ||
+      entry.saveFile !== this.entry.saveFile;
+    this.entry = { ...entry };
+    if (pathChanged) {
       this.lastHash = "";
       this.lastFailedHash = "";
       this.lastSize = 0;
       this.lastMtime = 0;
+      this.restartFolderWatch();
+      void this.tick();
     }
-    await this.persistConfig();
-    this.restartTimer();
-    this.restartFolderWatch();
-    logger.info("config updated", { ...this.config });
     this.emit("status", this.getStatus());
-    void this.tick();
-    return this.getConfig();
+  }
+
+  dispose(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    if (this.watchDebounce) clearTimeout(this.watchDebounce);
+    this.watchDebounce = null;
+    this.folderWatcher?.close();
+    this.folderWatcher = null;
+    this.listeners.clear();
   }
 
   async ingestUpload(fileName: string, bytes: Buffer): Promise<void> {
+    if (this.entry.kind === "demo") {
+      throw new Error("Upload a save onto a watchable server, or add a new save location first");
+    }
     await fs.mkdir(UPLOADS_DIR, { recursive: true });
     const safe = fileName.replace(/[^\w.\- ]+/g, "_") || "upload.sav";
-    const dest = path.join(UPLOADS_DIR, safe);
+    const dest = path.join(UPLOADS_DIR, this.entry.id.replace(/[^\w.-]+/g, "_"), safe);
+    await fs.mkdir(path.dirname(dest), { recursive: true });
     await fs.writeFile(dest, bytes);
-    this.config.mode = "watch";
-    this.config.saveFile = dest;
+    this.entry.kind = "watch";
+    this.entry.saveFile = dest;
     this.lastHash = "";
     this.lastFailedHash = "";
     this.lastSize = 0;
     this.lastMtime = 0;
-    await this.persistConfig();
     this.restartTimer();
     this.restartFolderWatch();
     await this.commitFromBuffer(safe, bytes, dest, Date.now(), "upload");
@@ -188,14 +199,14 @@ export class WorldHub {
 
   async tick(): Promise<void> {
     if (this.busy) {
-      logger.debug("tick skipped; already busy", { status: this.status, mode: this.config.mode });
+      logger.debug("tick skipped; already busy", { status: this.status, serverId: this.entry.id, mode: this.entry.kind });
       return;
     }
     this.busy = true;
     this.lastTickAt = Date.now();
-    logger.debug("tick start", { mode: this.config.mode, poll: this.config.pollIntervalSeconds });
+    logger.debug("tick start", { serverId: this.entry.id, mode: this.entry.kind, poll: this.pollIntervalSeconds });
     try {
-      if (this.config.mode === "demo") {
+      if (this.entry.kind === "demo") {
         this.tickDemo();
       } else {
         await this.tickWatch();
@@ -216,15 +227,13 @@ export class WorldHub {
     await fs.mkdir(DEFAULT_SAVES_DIR, { recursive: true });
     await fs.mkdir(UPLOADS_DIR, { recursive: true });
     await fs.mkdir(STAGING_DIR, { recursive: true });
-    await this.loadConfig();
-    logger.info("hub config loaded", { ...this.config });
-    if (this.config.mode === "demo") {
+    if (this.entry.kind === "demo") {
       this.commitEntities(
         buildDemoWorld(this.demoTick),
         { ...DEMO_HEADER },
         {
           kind: "demo",
-          name: "Grass Fields demo",
+          name: this.entry.name,
           sizeBytes: 0,
           hash: `demo-${this.demoTick}`,
           mtimeMs: Date.now(),
@@ -247,7 +256,7 @@ export class WorldHub {
       { ...DEMO_HEADER, playDurationSeconds: 60 * 47 + this.demoTick * 15 },
       {
         kind: "demo",
-        name: "Grass Fields demo",
+        name: this.entry.name,
         sizeBytes: 0,
         hash: `demo-${this.demoTick}`,
         mtimeMs: Date.now(),
@@ -266,14 +275,14 @@ export class WorldHub {
     if (!file) {
       this.status = "waiting";
       try {
-        await fs.access(this.config.savesDir);
-        this.progressMessage = this.config.saveFile
-          ? `Pinned save not found: ${this.config.saveFile}`
-          : `Watching ${this.config.savesDir} for a .sav file`;
-        logger.info("watch: no save yet", { dir: this.config.savesDir, saveFile: this.config.saveFile });
+        await fs.access(this.entry.savesDir);
+        this.progressMessage = this.entry.saveFile
+          ? `Pinned save not found: ${this.entry.saveFile}`
+          : `Watching ${this.entry.savesDir} for a .sav file`;
+        logger.info("watch: no save yet", { dir: this.entry.savesDir, saveFile: this.entry.saveFile });
       } catch {
-        this.progressMessage = `Save folder not found: ${this.config.savesDir}`;
-        logger.warn("watch: save folder missing", { dir: this.config.savesDir });
+        this.progressMessage = `Save folder not found: ${this.entry.savesDir}`;
+        logger.warn("watch: save folder missing", { dir: this.entry.savesDir });
       }
       this.emit("status", this.getStatus());
       return;
@@ -493,16 +502,16 @@ export class WorldHub {
   }
 
   private async resolveSaveFile(): Promise<string | null> {
-    if (this.config.saveFile) {
+    if (this.entry.saveFile) {
       try {
-        await fs.access(this.config.saveFile);
-        return this.config.saveFile;
+        await fs.access(this.entry.saveFile);
+        return this.entry.saveFile;
       } catch {
         return null;
       }
     }
     try {
-      return await newestWatchableSave(this.config.savesDir);
+      return await newestWatchableSave(this.entry.savesDir);
     } catch {
       return null;
     }
@@ -512,9 +521,9 @@ export class WorldHub {
     if (this.timer) clearInterval(this.timer);
     this.timer = setInterval(() => {
       void this.tick();
-    }, this.config.pollIntervalSeconds * 1000);
+    }, this.pollIntervalSeconds * 1000);
     this.timer.unref?.();
-    logger.info("poll timer set", { seconds: this.config.pollIntervalSeconds });
+    logger.info("poll timer set", { serverId: this.entry.id, seconds: this.pollIntervalSeconds });
   }
 
   private restartFolderWatch(): void {
@@ -525,12 +534,12 @@ export class WorldHub {
     this.folderWatcher?.close();
     this.folderWatcher = null;
     this.folderWatch = false;
-    if (this.config.mode !== "watch") return;
-    const dir = this.config.saveFile ? path.dirname(this.config.saveFile) : this.config.savesDir;
+    if (this.entry.kind !== "watch") return;
+    const dir = this.entry.saveFile ? path.dirname(this.entry.saveFile) : this.entry.savesDir;
     try {
       this.folderWatcher = watch(dir, (event, filename) => {
         const name = filename?.toString() ?? "";
-        logger.debug("fs.watch", { event, file: name, dir });
+        logger.debug("fs.watch", { event, file: name, dir, serverId: this.entry.id });
         if (this.watchDebounce) clearTimeout(this.watchDebounce);
         this.watchDebounce = setTimeout(() => {
           this.watchDebounce = null;
@@ -539,10 +548,11 @@ export class WorldHub {
       });
       this.folderWatcher.unref?.();
       this.folderWatch = true;
-      logger.info("fs.watch started", { dir });
+      logger.info("fs.watch started", { dir, serverId: this.entry.id });
     } catch (error) {
       logger.warn("fs.watch unavailable; poll only", {
         dir,
+        serverId: this.entry.id,
         err: error instanceof Error ? error.message : String(error),
       });
     }
@@ -557,60 +567,5 @@ export class WorldHub {
       }
     }
   }
-
-  private applyEnvOverlay(): boolean {
-    const mode = process.env.FICSIT_MODE?.trim().toLowerCase();
-    const dir = process.env.FICSIT_SAVES_DIR;
-    const file = process.env.FICSIT_SAVE_FILE;
-    const pollRaw = process.env.FICSIT_POLL_SECONDS;
-    let touched = false;
-    if (mode === "demo" || mode === "watch") {
-      this.config.mode = mode;
-      touched = true;
-    }
-    if (dir?.trim()) {
-      this.config.savesDir = normalizeFsPath(dir);
-      if (mode !== "demo" && mode !== "watch") this.config.mode = "watch";
-      touched = true;
-    }
-    if (file?.trim()) {
-      this.config.saveFile = normalizeFsPath(file);
-      if (mode !== "demo" && mode !== "watch") this.config.mode = "watch";
-      touched = true;
-    }
-    if (pollRaw) {
-      const poll = Number(pollRaw);
-      if (Number.isFinite(poll) && poll > 0) {
-        this.config.pollIntervalSeconds = nearestPollInterval(poll);
-        touched = true;
-      }
-    }
-    return touched;
-  }
-
-  private async loadConfig(): Promise<void> {
-    try {
-      const raw = await fs.readFile(CONFIG_PATH, "utf8");
-      const parsed = JSON.parse(raw) as Partial<HubConfig>;
-      this.config = { ...DEFAULT_CONFIG, ...parsed };
-    } catch {
-      this.config = { ...DEFAULT_CONFIG };
-    }
-    if (this.config.savesDir) this.config.savesDir = normalizeFsPath(this.config.savesDir);
-    if (this.config.saveFile) this.config.saveFile = normalizeFsPath(this.config.saveFile);
-    if (this.applyEnvOverlay()) await this.persistConfig();
-  }
-
-  private async persistConfig(): Promise<void> {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    await fs.writeFile(CONFIG_PATH, JSON.stringify(this.config, null, 2));
-  }
 }
 
-export function getWorldHub(): WorldHub {
-  const globalRef = globalThis as typeof globalThis & { __satisfactoryLiveMap?: WorldHub };
-  if (!globalRef.__satisfactoryLiveMap) {
-    globalRef.__satisfactoryLiveMap = new WorldHub();
-  }
-  return globalRef.__satisfactoryLiveMap;
-}

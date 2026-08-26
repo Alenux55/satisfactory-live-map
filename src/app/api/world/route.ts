@@ -1,13 +1,12 @@
-import { getWorldHub } from "@/lib/world/hub";
+import { hubForRequest } from "@/lib/world/registry";
 import { logger, withRequestLog } from "@/lib/log";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   return withRequestLog("GET", "/api/world", async () => {
-    const hub = getWorldHub();
-    await hub.whenReady();
+    const hub = await hubForRequest(request);
     const snapshot = hub.getSnapshot();
     const started = Date.now();
     const body = JSON.stringify(snapshot);
@@ -16,6 +15,7 @@ export async function GET() {
       entities: snapshot.entityCount,
       bytes: body.length,
       ms: Date.now() - started,
+      serverId: hub.getEntry().id,
     });
     return new Response(body, {
       headers: { "Content-Type": "application/json" },
@@ -23,10 +23,9 @@ export async function GET() {
   });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   return withRequestLog("POST", "/api/world", async () => {
-    const hub = getWorldHub();
-    await hub.whenReady();
+    const hub = await hubForRequest(request);
     await hub.tick();
     return Response.json(hub.getStatus());
   });

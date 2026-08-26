@@ -1,13 +1,13 @@
-import { getWorldHub } from "@/lib/world/hub";
+import { hubForRequest } from "@/lib/world/registry";
 import { logger } from "@/lib/log";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const hub = getWorldHub();
+  const hub = await hubForRequest(request);
   await hub.whenReady();
-  logger.info("sse connect");
+  logger.info("sse connect", { serverId: hub.getEntry().id });
   const encoder = new TextEncoder();
   let unsubscribe = () => {};
   let ping: ReturnType<typeof setInterval> | undefined;
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
           // stream already closed
         }
       };
-      send("hello", { rev: hub.getStatus().rev });
+      send("hello", { rev: hub.getStatus().rev, serverId: hub.getEntry().id });
       send("status", hub.getStatus());
       unsubscribe = hub.subscribe((event, data) => send(event, data));
       ping = setInterval(() => send("ping", { t: Date.now() }), 15000);
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       request.signal.addEventListener("abort", () => {
         if (ping) clearInterval(ping);
         unsubscribe();
-        logger.info("sse abort");
+        logger.info("sse abort", { serverId: hub.getEntry().id });
         try {
           controller.close();
         } catch {
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     cancel() {
       if (ping) clearInterval(ping);
       unsubscribe();
-      logger.info("sse cancel");
+      logger.info("sse cancel", { serverId: hub.getEntry().id });
     },
   });
 
