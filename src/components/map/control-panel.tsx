@@ -172,8 +172,13 @@ export function ControlPanel({
             }}
           />
           <p className="text-[11px] text-muted-foreground">
-            Match the dedicated-server autosave interval (often 5 minutes). Fast polls only add
-            stat/hash work; a changed ~20&nbsp;MB blob is still fully parsed on this machine.
+            {status?.folderWatch
+              ? "Folder watch picks up a new .sav within about a second. This slider is only a backup poll."
+              : "Backup poll while folder watch is off."}{" "}
+            The dedicated server still only writes on autosave (default 5 minutes). Closer to live means
+            shortening that, not this slider: Server Manager console{" "}
+            <span className="font-mono">FG.AutosaveInterval 60</span> (seconds). Below ~30s the DS hitches
+            more often; each write still takes a few seconds to parse here.
           </p>
         </div>
 

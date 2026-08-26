@@ -26,6 +26,18 @@ That is what “live” means here: the dedicated server writes a new `.sav`, th
 
 Idle is cheap (stat + maybe a hash). On autosave expect a CPU spike for a few seconds and a RAM spike of about **0.5–2 GB** during parse, then GC. Keep ~2 GB free next to the dedicated server process.
 
+## Closer to live
+
+The map can only update when the dedicated server **writes a .sav**. Default is every **300 seconds**. This app now **watches the save folder**, so a write is picked up in about a second; the poll slider is a backup.
+
+To actually get more frequent snapshots, shorten the DS autosave (Server Manager → Console):
+
+```
+FG.AutosaveInterval 60
+```
+
+That is seconds. **30–60s** is the practical band. Faster than ~30s hitch the dedicated server more often, and this sidecar still fully parses each changed ~20 MB blob (a few seconds). There is no public way to patch a save in place.
+
 ## Run locally
 
 Needs **Node 20.9+**.
@@ -94,7 +106,7 @@ On this PC: [http://127.0.0.1:43147](http://127.0.0.1:43147)
 
 From your desk: `http://<server-lan-ip>:43147`
 
-Confirm **Demo factory** is off and **Save folder** is the DS `SaveGames\server` directory. Set **Update period** to the in-game autosave interval (often **5 minutes**). Do not poll every 5 seconds on the game box.
+Confirm **Demo factory** is off and **Save folder** is the DS `SaveGames\server` directory. Folder watch updates on each autosave; keep **Update period** as a slower backup (1–5 minutes). For more frequent writes, `FG.AutosaveInterval 60` on the dedicated server.
 
 ### 3. Keep it running (start / stop / rebuild / boot)
 

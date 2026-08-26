@@ -101,6 +101,7 @@ export type HubStatus = {
   lastTickAt: number | null;
   lastChangeAt: number | null;
   skippedUnchanged: boolean;
+  folderWatch: boolean;
   source: WorldSource | null;
   counts: CategoryCounts;
   entityCount: number;

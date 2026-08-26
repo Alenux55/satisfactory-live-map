@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { watch, type FSWatcher } from "node:fs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { countCategories, diffWorld } from "./diff";
@@ -51,6 +52,9 @@ export class WorldHub {
   private entities = new Map<string, MapEntity>();
   private listeners = new Set<Listener>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  private folderWatcher: FSWatcher | null = null;
+  private watchDebounce: ReturnType<typeof setTimeout> | null = null;
+  private folderWatch = false;
   private busy = false;
   private demoTick = 8;
   private lastHash = "";
@@ -126,6 +130,7 @@ export class WorldHub {
       lastTickAt: this.lastTickAt,
       lastChangeAt: this.lastChangeAt,
       skippedUnchanged: this.skippedUnchanged,
+      folderWatch: this.folderWatch,
       source: this.source,
       counts: this.entities.size ? countCategories(this.entities.values()) : { ...EMPTY_COUNTS },
       entityCount: this.entities.size,
@@ -157,6 +162,7 @@ export class WorldHub {
     }
     await this.persistConfig();
     this.restartTimer();
+    this.restartFolderWatch();
     logger.info("config updated", { ...this.config });
     this.emit("status", this.getStatus());
     void this.tick();
@@ -176,6 +182,7 @@ export class WorldHub {
     this.lastMtime = 0;
     await this.persistConfig();
     this.restartTimer();
+    this.restartFolderWatch();
     await this.commitFromBuffer(safe, bytes, dest, Date.now(), "upload");
   }
 
@@ -229,6 +236,7 @@ export class WorldHub {
       await this.tick();
     }
     this.restartTimer();
+    this.restartFolderWatch();
   }
 
   private tickDemo(): void {
@@ -507,6 +515,37 @@ export class WorldHub {
     }, this.config.pollIntervalSeconds * 1000);
     this.timer.unref?.();
     logger.info("poll timer set", { seconds: this.config.pollIntervalSeconds });
+  }
+
+  private restartFolderWatch(): void {
+    if (this.watchDebounce) {
+      clearTimeout(this.watchDebounce);
+      this.watchDebounce = null;
+    }
+    this.folderWatcher?.close();
+    this.folderWatcher = null;
+    this.folderWatch = false;
+    if (this.config.mode !== "watch") return;
+    const dir = this.config.saveFile ? path.dirname(this.config.saveFile) : this.config.savesDir;
+    try {
+      this.folderWatcher = watch(dir, (event, filename) => {
+        const name = filename?.toString() ?? "";
+        logger.debug("fs.watch", { event, file: name, dir });
+        if (this.watchDebounce) clearTimeout(this.watchDebounce);
+        this.watchDebounce = setTimeout(() => {
+          this.watchDebounce = null;
+          void this.tick();
+        }, 800);
+      });
+      this.folderWatcher.unref?.();
+      this.folderWatch = true;
+      logger.info("fs.watch started", { dir });
+    } catch (error) {
+      logger.warn("fs.watch unavailable; poll only", {
+        dir,
+        err: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private emit(event: string, data: unknown): void {
