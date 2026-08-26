@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Menu } from "lucide-react";
+import type { ImageOverlay, Map as LeafletMap } from "leaflet";
 import { applyDelta } from "@/lib/world/diff";
 import {
   GRID_METERS,
@@ -38,6 +39,27 @@ export function LiveMap() {
   const [selected, setSelected] = useState<MapEntity | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [useTerrain, setUseTerrain] = useState(true);
+  const [terrainReady, setTerrainReady] = useState(false);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const overlaysRef = useRef<{ schematic: ImageOverlay; terrain: ImageOverlay | null } | null>(null);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("ficsit-terrain") === "0") setUseTerrain(false);
+    } catch {
+      // private mode
+    }
+  }, []);
+
+  const setTerrainPref = useCallback((on: boolean) => {
+    setUseTerrain(on);
+    try {
+      localStorage.setItem("ficsit-terrain", on ? "1" : "0");
+    } catch {
+      // private mode
+    }
+  }, []);
 
   const pushEntities = useCallback((next: Map<string, MapEntity>) => {
     entitiesRef.current = next;
@@ -87,9 +109,34 @@ export function LiveMap() {
         zoomControl: false,
       });
       L.control.zoom({ position: "bottomright" }).addTo(map);
+      map.createPane("worldMap");
+      const worldPane = map.getPane("worldMap");
+      if (worldPane) worldPane.style.zIndex = "350";
+
       map.fitBounds(MAP_BOUNDS, { animate: false });
       map.setView(worldToLatLng(WORLD_X_MIN + 2 * GRID_METERS + 480, WORLD_Y_SOUTH - 420), -0.5);
-      L.imageOverlay("/api/map.svg", MAP_BOUNDS, { opacity: 0.95, interactive: false }).addTo(map);
+      const schematic = L.imageOverlay("/api/map.svg", MAP_BOUNDS, {
+        pane: "worldMap",
+        opacity: 0.95,
+        interactive: false,
+      }).addTo(map);
+      overlaysRef.current = { schematic, terrain: null };
+      mapRef.current = map;
+
+      void fetch("/api/terrain")
+        .then((response) => {
+          if (!response.ok || cancelled) return null;
+          const terrain = L.imageOverlay("/api/terrain", MAP_BOUNDS, {
+            pane: "worldMap",
+            opacity: 1,
+            interactive: false,
+          });
+          overlaysRef.current = { schematic, terrain };
+          setTerrainReady(true);
+          return terrain;
+        })
+        .catch(() => null);
+
       L.rectangle(MAP_BOUNDS, {
         color: "#f4c37d",
         weight: 1,
@@ -115,10 +162,26 @@ export function LiveMap() {
       cancelled = true;
       canvasRef.current?.remove();
       canvasRef.current = null;
+      overlaysRef.current = null;
+      mapRef.current = null;
       if (map && onMove) map.off("move", onMove);
       map?.remove();
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const overlays = overlaysRef.current;
+    if (!map || !overlays) return;
+    const wantTerrain = useTerrain && overlays.terrain;
+    if (wantTerrain && overlays.terrain) {
+      if (!map.hasLayer(overlays.terrain)) overlays.terrain.addTo(map);
+      if (map.hasLayer(overlays.schematic)) map.removeLayer(overlays.schematic);
+    } else {
+      if (overlays.terrain && map.hasLayer(overlays.terrain)) map.removeLayer(overlays.terrain);
+      if (!map.hasLayer(overlays.schematic)) overlays.schematic.addTo(map);
+    }
+  }, [useTerrain, terrainReady]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -175,6 +238,9 @@ export function LiveMap() {
       config={config}
       layers={layers}
       selected={selected}
+      useTerrain={useTerrain}
+      terrainReady={terrainReady}
+      onTerrain={setTerrainPref}
       onLayers={setLayers}
       onConfig={patchConfig}
       onUpload={uploadSave}

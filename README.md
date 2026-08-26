@@ -2,7 +2,7 @@
 
 Self-hosted Satisfactory world map that **watches a save folder**, parses only when the `.sav` actually changes, and **streams entity deltas** to the browser so a ~20 MB factory does not reload on every poll.
 
-This is **not** a copy of [Satisfactory Calculator / SCIM](https://satisfactory-calculator.com/en/interactive-map). SCIM’s source and map tiles are proprietary. This app is an original viewer: MIT save parser, schematic biome grid from public wiki coordinates, canvas overlay, and a live update loop you can run on your own server.
+This is **not** a copy of [Satisfactory Calculator / SCIM](https://satisfactory-calculator.com/en/interactive-map). SCIM’s source and map tiles are proprietary. This app is an original viewer: MIT save parser, wiki in-game map (or schematic fallback), canvas overlay, and a live update loop you can run on your own server.
 
 ## What it does
 
@@ -12,6 +12,7 @@ This is **not** a copy of [Satisfactory Calculator / SCIM](https://satisfactory-
 - Skips unchanged saves by size, mtime, then SHA-256
 - After the first snapshot, the UI applies added / updated / removed actors only
 - Ships with a **Grass Fields demo factory** that grows on the same interval so you can see live deltas without a save
+- Background: 1.0 in-game map from the [official wiki Map.jpg](https://satisfactory.wiki.gg/wiki/File:Map.jpg) (cached to `data/world-map.jpg`, not committed). Schematic biome grid if the download fails. Not SCIM tiles.
 
 ## Honest limit on “incremental parse”
 

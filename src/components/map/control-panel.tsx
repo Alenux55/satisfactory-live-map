@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { FolderOpen, Layers, Radio, RefreshCw, Timer, Upload } from "lucide-react";
+import { FolderOpen, Globe2, Layers, Radio, RefreshCw, Timer, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,9 @@ type Props = {
   config: HubConfig | null;
   layers: Record<EntityCategory, boolean>;
   selected: MapEntity | null;
+  useTerrain: boolean;
+  terrainReady: boolean;
+  onTerrain: (on: boolean) => void;
   onLayers: (layers: Record<EntityCategory, boolean>) => void;
   onConfig: (patch: Partial<HubConfig>) => Promise<void>;
   onUpload: (file: File) => Promise<void>;
@@ -39,6 +42,9 @@ export function ControlPanel({
   config,
   layers,
   selected,
+  useTerrain,
+  terrainReady,
+  onTerrain,
   onLayers,
   onConfig,
   onUpload,
@@ -127,6 +133,21 @@ export function ControlPanel({
           </div>
           <p className="text-[11px] text-muted-foreground">
             Demo grows a Grass Fields starter on the same interval so you can see deltas without a save.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="terrain" className="inline-flex items-center gap-1.5">
+              <Globe2 className="size-3.5" />
+              Terrain map
+            </Label>
+            <Switch id="terrain" checked={useTerrain} onCheckedChange={onTerrain} />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {terrainReady
+              ? "Official wiki Map.jpg (Coffee Stain in-game map), cached as data/world-map.jpg. Not SCIM tiles."
+              : "Downloading the 1.0 wiki map (~2 MB). Schematic grid stays until it arrives."}
           </p>
         </div>
 
@@ -280,8 +301,8 @@ export function ControlPanel({
         ) : null}
 
         <p className="text-[10px] leading-relaxed text-muted-foreground">
-          Satisfactory is © Coffee Stain Studios. This tool only reads saves you provide. Biome regions
-          are a schematic grid from public wiki coordinates, not Satisfactory Calculator tiles.
+          Satisfactory is © Coffee Stain Studios. This tool only reads saves you provide. Terrain is the
+          official wiki Map.jpg (in-game map), cached locally — not Satisfactory Calculator tiles.
         </p>
       </div>
     </ScrollArea>
