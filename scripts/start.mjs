@@ -12,6 +12,7 @@ process.env.FICSIT_LOG ??= "debug";
 process.env.FICSIT_LOG_FILE ??= path.join(repoRoot, "data", "server.log");
 process.env.HOSTNAME ??= "0.0.0.0";
 process.env.PORT ??= "43147";
+process.env.FICSIT_PARSE_CHILD ??= path.join(repoRoot, ".next", "parse-worker", "parse-worker.js");
 
 const nextCli = path.join(repoRoot, "node_modules", "next", "dist", "bin", "next");
 const port = process.env.PORT;
