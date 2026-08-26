@@ -62,7 +62,7 @@ PORT=$Port
 FICSIT_SAVES_DIR=$savesEnv
 FICSIT_MODE=$Mode
 FICSIT_POLL_SECONDS=$PollSeconds
-FICSIT_LOG=debug
+FICSIT_LOG=info
 "@
 [System.IO.File]::WriteAllText($envPath, $dotenv)
 Write-Host "`nWrote $envPath"

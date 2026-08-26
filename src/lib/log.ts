@@ -6,10 +6,10 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 const RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
 function activeLevel(): LogLevel {
-  const raw = (process.env.FICSIT_LOG ?? "debug").toLowerCase();
+  const raw = (process.env.FICSIT_LOG ?? "info").toLowerCase();
   if (raw === "debug" || raw === "info" || raw === "warn" || raw === "error") return raw;
   if (raw === "silent" || raw === "off") return "error";
-  return "debug";
+  return "info";
 }
 
 function logFilePath(): string | null {

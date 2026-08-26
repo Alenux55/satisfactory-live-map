@@ -22,7 +22,7 @@
   <env name="NODE_ENV" value="production"/>
   <env name="HOSTNAME" value="0.0.0.0"/>
   <env name="PORT" value="43147"/>
-  <env name="FICSIT_LOG" value="debug"/>
+  <env name="FICSIT_LOG" value="info"/>
   <log mode="roll-by-size">
     <sizeThreshold>10240</sizeThreshold>
     <keepFiles>8</keepFiles>

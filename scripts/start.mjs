@@ -8,7 +8,7 @@ process.chdir(repoRoot);
 mkdirSync(path.join(repoRoot, "data"), { recursive: true });
 
 process.env.NODE_ENV ??= "production";
-process.env.FICSIT_LOG ??= "debug";
+process.env.FICSIT_LOG ??= "info";
 process.env.FICSIT_LOG_FILE ??= path.join(repoRoot, "data", "server.log");
 process.env.HOSTNAME ??= "0.0.0.0";
 process.env.PORT ??= "43147";

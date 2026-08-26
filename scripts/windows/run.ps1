@@ -3,7 +3,7 @@
 param(
   [int]$Port = 43147,
   [ValidateSet("debug", "info", "warn", "error")]
-  [string]$LogLevel = "debug"
+  [string]$LogLevel = "info"
 )
 
 Set-StrictMode -Version Latest
@@ -24,6 +24,6 @@ if (-not $env:FICSIT_LOG) { $env:FICSIT_LOG = $LogLevel }
 if (-not $env:FICSIT_LOG_FILE) { $env:FICSIT_LOG_FILE = (Join-Path $RepoRoot "data\server.log") }
 
 $node = (Get-Command node -ErrorAction Stop).Source
-Write-Host "FICSIT Live Map verbose start  log=$($env:FICSIT_LOG)  file=$($env:FICSIT_LOG_FILE)  port=$($env:PORT)"
+Write-Host "FICSIT Live Map start  log=$($env:FICSIT_LOG)  file=$($env:FICSIT_LOG_FILE)  port=$($env:PORT)"
 & $node $starter
 if (-not $?) { exit 1 }
