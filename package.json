@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 43147",
-    "build": "next build",
-    "start": "next start -H 0.0.0.0 -p 43147",
+    "build": "next build && npm run build:worker",
+    "build:worker": "tsc -p tsconfig.worker.json",
+    "start": "node scripts/start.mjs",
     "lint": "eslint"
   },
   "engines": {

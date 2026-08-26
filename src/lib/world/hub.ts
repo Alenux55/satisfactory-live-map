@@ -3,7 +3,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { countCategories, diffWorld } from "./diff";
 import { buildDemoWorld, DEMO_HEADER } from "./demo";
-import { parseSaveBuffer } from "./extract";
+import { parseSaveAsync } from "./parse-async";
+import { logger, memorySnapshot } from "@/lib/log";
 import {
   isTransientFsError,
   newestWatchableSave,
@@ -71,18 +72,24 @@ export class WorldHub {
   private ready: Promise<void>;
 
   constructor() {
+    logger.info("world hub created", { pid: process.pid, ...memorySnapshot() });
     this.ready = this.bootstrap();
   }
 
   async whenReady(): Promise<void> {
+    const started = Date.now();
     await this.ready;
+    const waited = Date.now() - started;
+    if (waited > 50) logger.debug("whenReady waited", { ms: waited, status: this.status });
   }
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
+    logger.debug("sse client subscribed", { clients: this.listeners.size });
     listener("status", this.getStatus());
     return () => {
       this.listeners.delete(listener);
+      logger.debug("sse client left", { clients: this.listeners.size });
     };
   }
 
@@ -150,6 +157,7 @@ export class WorldHub {
     }
     await this.persistConfig();
     this.restartTimer();
+    logger.info("config updated", { ...this.config });
     this.emit("status", this.getStatus());
     void this.tick();
     return this.getConfig();
@@ -172,19 +180,25 @@ export class WorldHub {
   }
 
   async tick(): Promise<void> {
-    if (this.busy) return;
+    if (this.busy) {
+      logger.debug("tick skipped; already busy", { status: this.status, mode: this.config.mode });
+      return;
+    }
     this.busy = true;
     this.lastTickAt = Date.now();
+    logger.debug("tick start", { mode: this.config.mode, poll: this.config.pollIntervalSeconds });
     try {
       if (this.config.mode === "demo") {
         this.tickDemo();
       } else {
         await this.tickWatch();
       }
+      logger.debug("tick end", { status: this.status, skipped: this.skippedUnchanged, rev: this.rev });
     } catch (error) {
       this.status = "error";
       this.error = error instanceof Error ? error.message : "Unknown error";
       this.progressMessage = this.error;
+      logger.error("tick failed", { err: this.error });
       this.emit("status", this.getStatus());
     } finally {
       this.busy = false;
@@ -196,6 +210,7 @@ export class WorldHub {
     await fs.mkdir(UPLOADS_DIR, { recursive: true });
     await fs.mkdir(STAGING_DIR, { recursive: true });
     await this.loadConfig();
+    logger.info("hub config loaded", { ...this.config });
     if (this.config.mode === "demo") {
       this.commitEntities(
         buildDemoWorld(this.demoTick),
@@ -247,8 +262,10 @@ export class WorldHub {
         this.progressMessage = this.config.saveFile
           ? `Pinned save not found: ${this.config.saveFile}`
           : `Watching ${this.config.savesDir} for a .sav file`;
+        logger.info("watch: no save yet", { dir: this.config.savesDir, saveFile: this.config.saveFile });
       } catch {
         this.progressMessage = `Save folder not found: ${this.config.savesDir}`;
+        logger.warn("watch: save folder missing", { dir: this.config.savesDir });
       }
       this.emit("status", this.getStatus());
       return;
@@ -260,6 +277,7 @@ export class WorldHub {
       if (isTransientFsError(error)) {
         this.status = "waiting";
         this.progressMessage = `Save is locked by the dedicated server (${path.basename(file)}) — will retry`;
+        logger.info("watch: save locked on stat", { file });
         this.emit("status", this.getStatus());
         return;
       }
@@ -274,6 +292,11 @@ export class WorldHub {
       } else {
         this.status = "ready";
         this.progressMessage = "Save unchanged — skipped parse";
+        logger.debug("watch: size/mtime unchanged, skip parse", {
+          file,
+          size: stat.size,
+          mtimeMs: stat.mtimeMs,
+        });
         this.emit("heartbeat", { rev: this.rev, skipped: true, at: Date.now() });
       }
       this.emit("status", this.getStatus());
@@ -290,6 +313,7 @@ export class WorldHub {
       this.status = "waiting";
       this.progressMessage = read.message;
       this.emit("status", this.getStatus());
+      logger.debug("watch: waiting for save write", { file, reason: read.reason });
       await sleepMs(500);
       read = await readSaveCopy(file);
     }
@@ -298,6 +322,7 @@ export class WorldHub {
       this.progressMessage = read.message;
       this.error = null;
       this.emit("status", this.getStatus());
+      logger.warn("watch: could not read save", { file, reason: read.reason, message: read.message });
       return;
     }
 
@@ -310,6 +335,7 @@ export class WorldHub {
       this.status = "ready";
       this.progress = 1;
       this.progressMessage = "Save hash unchanged — skipped parse";
+      logger.info("watch: hash unchanged, skip parse", { file, hash: hash.slice(0, 12), size: read.size });
       this.emit("heartbeat", { rev: this.rev, skipped: true, at: Date.now() });
       this.emit("status", this.getStatus());
       return;
@@ -319,6 +345,7 @@ export class WorldHub {
       this.lastMtime = read.mtimeMs;
       this.status = "error";
       this.progressMessage = "Save hash unchanged after a failed parse — waiting for a new write";
+      logger.warn("watch: not retrying failed hash", { file, hash: hash.slice(0, 12) });
       this.emit("status", this.getStatus());
       return;
     }
@@ -349,12 +376,36 @@ export class WorldHub {
     this.progressMessage = `Parsing ${name}`;
     this.skippedUnchanged = false;
     this.emit("status", this.getStatus());
+    logger.info("parse begin", {
+      name,
+      kind,
+      mb: Number((bytes.byteLength / (1024 * 1024)).toFixed(2)),
+      ...memorySnapshot(),
+    });
     const started = Date.now();
     const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-    const parsed = parseSaveBuffer(name, copy as ArrayBuffer, (progress, message) => {
+    let lastStatusEmit = 0;
+    let lastLoggedBucket = -1;
+    const parsed = await parseSaveAsync(name, copy as ArrayBuffer, (progress, message) => {
       this.progress = 0.1 + progress * 0.85;
       this.progressMessage = message || `Parsing ${name}`;
-      this.emit("status", this.getStatus());
+      const bucket = Math.floor(progress * 10);
+      if (bucket !== lastLoggedBucket) {
+        lastLoggedBucket = bucket;
+        logger.debug(`parse ${name} ${Math.round(progress * 100)}%`, { message });
+      }
+      const now = Date.now();
+      if (now - lastStatusEmit >= 250 || progress >= 1) {
+        lastStatusEmit = now;
+        this.emit("status", this.getStatus());
+      }
+    });
+    logger.info("parse extract complete", {
+      name,
+      ms: Date.now() - started,
+      entities: parsed.entities.length,
+      session: parsed.header.sessionName,
+      ...memorySnapshot(),
     });
     if (this.rev > 0 && this.entities.size > 20 && parsed.entities.length === 0) {
       throw new Error(`Parse of ${name} produced no buildings; treating as an incomplete write`);
@@ -376,6 +427,7 @@ export class WorldHub {
     this.progress = 1;
     this.progressMessage = `Live from ${name}`;
     this.error = null;
+    logger.info("parse committed", { name, rev: this.rev, entities: this.entities.size, ...memorySnapshot() });
     this.emit("status", this.getStatus());
   }
 
@@ -394,6 +446,7 @@ export class WorldHub {
     if (!changed && this.rev > 0) {
       this.skippedUnchanged = true;
       this.lastDelta = { added: 0, updated: 0, removed: 0, parsedMs };
+      logger.debug("delta empty after parse", { parsedMs, entities: list.length });
       return;
     }
     const fromRev = this.rev;
@@ -406,6 +459,15 @@ export class WorldHub {
       removed: diff.removed.length,
       parsedMs,
     };
+    logger.info("delta", {
+      fromRev,
+      rev: this.rev,
+      added: this.lastDelta.added,
+      updated: this.lastDelta.updated,
+      removed: this.lastDelta.removed,
+      parsedMs,
+      entities: this.entities.size,
+    });
     const payload: WorldDelta = {
       rev: this.rev,
       fromRev,
@@ -444,6 +506,7 @@ export class WorldHub {
       void this.tick();
     }, this.config.pollIntervalSeconds * 1000);
     this.timer.unref?.();
+    logger.info("poll timer set", { seconds: this.config.pollIntervalSeconds });
   }
 
   private emit(event: string, data: unknown): void {

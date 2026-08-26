@@ -1,4 +1,5 @@
 import { getWorldHub } from "@/lib/world/hub";
+import { logger } from "@/lib/log";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -6,6 +7,7 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   const hub = getWorldHub();
   await hub.whenReady();
+  logger.info("sse connect");
   const encoder = new TextEncoder();
   let unsubscribe = () => {};
   let ping: ReturnType<typeof setInterval> | undefined;
@@ -27,6 +29,7 @@ export async function GET(request: Request) {
       request.signal.addEventListener("abort", () => {
         if (ping) clearInterval(ping);
         unsubscribe();
+        logger.info("sse abort");
         try {
           controller.close();
         } catch {
@@ -37,6 +40,7 @@ export async function GET(request: Request) {
     cancel() {
       if (ping) clearInterval(ping);
       unsubscribe();
+      logger.info("sse cancel");
     },
   });
 

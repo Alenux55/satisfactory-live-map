@@ -14,7 +14,7 @@
   <name>FICSIT Live Map</name>
   <description>Sidecar live map for a Satisfactory dedicated server. Parses .sav on change; serves HTTP on port 43147.</description>
   <executable>node</executable>
-  <arguments>node_modules/next/dist/bin/next start -H 0.0.0.0 -p 43147</arguments>
+  <arguments>scripts/start.mjs</arguments>
   <workingdirectory>%BASE%</workingdirectory>
   <stoptimeout>15 sec</stoptimeout>
   <onfailure action="restart" delay="10 sec"/>
@@ -22,6 +22,7 @@
   <env name="NODE_ENV" value="production"/>
   <env name="HOSTNAME" value="0.0.0.0"/>
   <env name="PORT" value="43147"/>
+  <env name="FICSIT_LOG" value="debug"/>
   <log mode="roll-by-size">
     <sizeThreshold>10240</sizeThreshold>
     <keepFiles>8</keepFiles>

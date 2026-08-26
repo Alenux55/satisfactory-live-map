@@ -46,6 +46,7 @@ next-env.d.ts
 /data/uploads/*
 /data/staging/*
 /data/config.json
+/data/server.log
 !/data/saves/.gitkeep
 !/data/uploads/.gitkeep
 !/data/staging/.gitkeep

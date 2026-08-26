@@ -45,6 +45,8 @@ npm start
 
 `npm start` binds **0.0.0.0:43147** so other devices on the LAN can connect. Use `next start`, not `next dev`, on the game server.
 
+Verbose logs go to the console and `data/server.log` (`FICSIT_LOG=debug` by default). On Windows: `Get-Content data\server.log -Wait -Tail 80`. Set `FICSIT_LOG=info` to quiet ticks.
+
 ## Windows dedicated server (sidecar)
 
 Run this on the **same Windows box as the Satisfactory dedicated server**, as a sidecar — not instead of the DS, and not as `next dev`.
@@ -85,6 +87,8 @@ Copy `.env.example` to `.env.local` if you prefer to edit by hand. `%LOCALAPPDAT
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\run.ps1
 ```
 
+Logs: console plus `data\server.log`. `run.ps1` defaults to `FICSIT_LOG=debug`.
+
 On this PC: [http://127.0.0.1:43147](http://127.0.0.1:43147)
 
 From your desk: `http://<server-lan-ip>:43147`
@@ -113,9 +117,9 @@ Run the service as the dedicated-server account. `.env.local` in the repo root i
 **NSSM** — if you already use NSSM for the DS:
 
 ```powershell
-nssm install FicsitLiveMap "C:\Program Files\nodejs\node.exe" "C:\path\to\satisfactory-live-map\node_modules\next\dist\bin\next" start -H 0.0.0.0 -p 43147
+nssm install FicsitLiveMap "C:\Program Files\nodejs\node.exe" "C:\path\to\satisfactory-live-map\scripts\start.mjs"
 nssm set FicsitLiveMap AppDirectory "C:\path\to\satisfactory-live-map"
-nssm set FicsitLiveMap AppEnvironmentExtra NODE_ENV=production HOSTNAME=0.0.0.0 PORT=43147
+nssm set FicsitLiveMap AppEnvironmentExtra NODE_ENV=production HOSTNAME=0.0.0.0 PORT=43147 FICSIT_LOG=debug
 nssm start FicsitLiveMap
 ```
 
