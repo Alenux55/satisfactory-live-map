@@ -1,0 +1,29 @@
+<!--
+  WinSW config. Put WinSW.exe in the repo root as ficsit-live-map.exe
+  and copy this file next to it as ficsit-live-map.xml, then:
+
+    ficsit-live-map.exe install
+    ficsit-live-map.exe start
+
+  %BASE% is the folder that contains the exe (the repo root).
+  Use the same Windows account as the dedicated server.
+  https://github.com/winsw/winsw/releases
+-->
+<service>
+  <id>ficsit-live-map</id>
+  <name>FICSIT Live Map</name>
+  <description>Sidecar live map for a Satisfactory dedicated server. Parses .sav on change; serves HTTP on port 43147.</description>
+  <executable>node</executable>
+  <arguments>node_modules/next/dist/bin/next start -H 0.0.0.0 -p 43147</arguments>
+  <workingdirectory>%BASE%</workingdirectory>
+  <stoptimeout>15 sec</stoptimeout>
+  <onfailure action="restart" delay="10 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <env name="NODE_ENV" value="production"/>
+  <env name="HOSTNAME" value="0.0.0.0"/>
+  <env name="PORT" value="43147"/>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>

@@ -5,8 +5,16 @@ import { countCategories, diffWorld } from "./diff";
 import { buildDemoWorld, DEMO_HEADER } from "./demo";
 import { parseSaveBuffer } from "./extract";
 import {
+  isTransientFsError,
+  newestWatchableSave,
+  normalizeFsPath,
+  readSaveCopy,
+  sleepMs,
+  STAGING_DIR,
+} from "./save-io";
+import {
   EMPTY_COUNTS,
-  POLL_INTERVALS_SEC,
+  nearestPollInterval,
   type HubConfig,
   type HubStatus,
   type MapEntity,
@@ -45,6 +53,7 @@ export class WorldHub {
   private busy = false;
   private demoTick = 8;
   private lastHash = "";
+  private lastFailedHash = "";
   private lastSize = 0;
   private lastMtime = 0;
   private config: HubConfig = { ...DEFAULT_CONFIG };
@@ -124,22 +133,18 @@ export class WorldHub {
 
   async updateConfig(patch: Partial<HubConfig>): Promise<HubConfig> {
     if (patch.pollIntervalSeconds != null) {
-      const nearest = POLL_INTERVALS_SEC.reduce((best, value) =>
-        Math.abs(value - patch.pollIntervalSeconds!) < Math.abs(best - patch.pollIntervalSeconds!)
-          ? value
-          : best,
-      );
-      this.config.pollIntervalSeconds = nearest;
+      this.config.pollIntervalSeconds = nearestPollInterval(patch.pollIntervalSeconds);
     }
     if (patch.savesDir != null && patch.savesDir.trim()) {
-      this.config.savesDir = patch.savesDir.trim();
+      this.config.savesDir = normalizeFsPath(patch.savesDir);
     }
     if (patch.saveFile !== undefined) {
-      this.config.saveFile = patch.saveFile;
+      this.config.saveFile = patch.saveFile?.trim() ? normalizeFsPath(patch.saveFile) : null;
     }
     if (patch.mode && patch.mode !== this.config.mode) {
       this.config.mode = patch.mode;
       this.lastHash = "";
+      this.lastFailedHash = "";
       this.lastSize = 0;
       this.lastMtime = 0;
     }
@@ -158,6 +163,9 @@ export class WorldHub {
     this.config.mode = "watch";
     this.config.saveFile = dest;
     this.lastHash = "";
+    this.lastFailedHash = "";
+    this.lastSize = 0;
+    this.lastMtime = 0;
     await this.persistConfig();
     this.restartTimer();
     await this.commitFromBuffer(safe, bytes, dest, Date.now(), "upload");
@@ -186,6 +194,7 @@ export class WorldHub {
   private async bootstrap(): Promise<void> {
     await fs.mkdir(DEFAULT_SAVES_DIR, { recursive: true });
     await fs.mkdir(UPLOADS_DIR, { recursive: true });
+    await fs.mkdir(STAGING_DIR, { recursive: true });
     await this.loadConfig();
     if (this.config.mode === "demo") {
       this.commitEntities(
@@ -233,27 +242,70 @@ export class WorldHub {
     const file = await this.resolveSaveFile();
     if (!file) {
       this.status = "waiting";
-      this.progressMessage = `Watching ${this.config.savesDir} for a .sav file`;
+      try {
+        await fs.access(this.config.savesDir);
+        this.progressMessage = this.config.saveFile
+          ? `Pinned save not found: ${this.config.saveFile}`
+          : `Watching ${this.config.savesDir} for a .sav file`;
+      } catch {
+        this.progressMessage = `Save folder not found: ${this.config.savesDir}`;
+      }
       this.emit("status", this.getStatus());
       return;
     }
-    const stat = await fs.stat(file);
+    let stat;
+    try {
+      stat = await fs.stat(file);
+    } catch (error) {
+      if (isTransientFsError(error)) {
+        this.status = "waiting";
+        this.progressMessage = `Save is locked by the dedicated server (${path.basename(file)}) — will retry`;
+        this.emit("status", this.getStatus());
+        return;
+      }
+      throw error;
+    }
     if (stat.size === this.lastSize && stat.mtimeMs === this.lastMtime && this.rev > 0) {
       this.skippedUnchanged = true;
-      this.progressMessage = "Save unchanged — skipped parse";
-      this.emit("heartbeat", { rev: this.rev, skipped: true, at: Date.now() });
+      this.progress = 1;
+      if (this.lastFailedHash) {
+        this.status = "error";
+        this.progressMessage = "Last parse failed; waiting for the next save write";
+      } else {
+        this.status = "ready";
+        this.progressMessage = "Save unchanged — skipped parse";
+        this.emit("heartbeat", { rev: this.rev, skipped: true, at: Date.now() });
+      }
       this.emit("status", this.getStatus());
       return;
     }
-    this.lastSize = stat.size;
-    this.lastMtime = stat.mtimeMs;
     this.status = "hashing";
     this.progress = 0.05;
-    this.progressMessage = `Hashing ${path.basename(file)} (${(stat.size / (1024 * 1024)).toFixed(1)} MB)`;
+    this.progressMessage = `Reading ${path.basename(file)} (${(stat.size / (1024 * 1024)).toFixed(1)} MB)`;
     this.emit("status", this.getStatus());
-    const bytes = await fs.readFile(file);
-    const hash = sha256(bytes);
+
+    let read = await readSaveCopy(file);
+    const giveUp = Date.now() + 10_000;
+    while (!read.ok && (read.reason === "writing" || read.reason === "locked") && Date.now() < giveUp) {
+      this.status = "waiting";
+      this.progressMessage = read.message;
+      this.emit("status", this.getStatus());
+      await sleepMs(500);
+      read = await readSaveCopy(file);
+    }
+    if (!read.ok) {
+      this.status = "waiting";
+      this.progressMessage = read.message;
+      this.error = null;
+      this.emit("status", this.getStatus());
+      return;
+    }
+
+    const hash = sha256(read.bytes);
     if (hash === this.lastHash && this.rev > 0) {
+      this.lastSize = read.size;
+      this.lastMtime = read.mtimeMs;
+      this.lastFailedHash = "";
       this.skippedUnchanged = true;
       this.status = "ready";
       this.progress = 1;
@@ -262,7 +314,26 @@ export class WorldHub {
       this.emit("status", this.getStatus());
       return;
     }
-    await this.commitFromBuffer(path.basename(file), bytes, file, stat.mtimeMs, "watch");
+    if (hash === this.lastFailedHash) {
+      this.lastSize = read.size;
+      this.lastMtime = read.mtimeMs;
+      this.status = "error";
+      this.progressMessage = "Save hash unchanged after a failed parse — waiting for a new write";
+      this.emit("status", this.getStatus());
+      return;
+    }
+
+    try {
+      await this.commitFromBuffer(path.basename(file), read.bytes, file, read.mtimeMs, "watch");
+      this.lastSize = read.size;
+      this.lastMtime = read.mtimeMs;
+      this.lastFailedHash = "";
+    } catch (error) {
+      this.lastSize = read.size;
+      this.lastMtime = read.mtimeMs;
+      this.lastFailedHash = hash;
+      throw error;
+    }
   }
 
   private async commitFromBuffer(
@@ -285,6 +356,9 @@ export class WorldHub {
       this.progressMessage = message || `Parsing ${name}`;
       this.emit("status", this.getStatus());
     });
+    if (this.rev > 0 && this.entities.size > 20 && parsed.entities.length === 0) {
+      throw new Error(`Parse of ${name} produced no buildings; treating as an incomplete write`);
+    }
     this.lastHash = hash;
     this.commitEntities(
       parsed.entities,
@@ -358,18 +432,7 @@ export class WorldHub {
       }
     }
     try {
-      const entries = await fs.readdir(this.config.savesDir);
-      const savs = entries.filter((name) => name.toLowerCase().endsWith(".sav"));
-      if (savs.length === 0) return null;
-      const ranked = await Promise.all(
-        savs.map(async (name) => {
-          const full = path.join(this.config.savesDir, name);
-          const stat = await fs.stat(full);
-          return { full, mtime: stat.mtimeMs };
-        }),
-      );
-      ranked.sort((a, b) => b.mtime - a.mtime);
-      return ranked[0]?.full ?? null;
+      return await newestWatchableSave(this.config.savesDir);
     } catch {
       return null;
     }
@@ -393,6 +456,36 @@ export class WorldHub {
     }
   }
 
+  private applyEnvOverlay(): boolean {
+    const mode = process.env.FICSIT_MODE?.trim().toLowerCase();
+    const dir = process.env.FICSIT_SAVES_DIR;
+    const file = process.env.FICSIT_SAVE_FILE;
+    const pollRaw = process.env.FICSIT_POLL_SECONDS;
+    let touched = false;
+    if (mode === "demo" || mode === "watch") {
+      this.config.mode = mode;
+      touched = true;
+    }
+    if (dir?.trim()) {
+      this.config.savesDir = normalizeFsPath(dir);
+      if (mode !== "demo" && mode !== "watch") this.config.mode = "watch";
+      touched = true;
+    }
+    if (file?.trim()) {
+      this.config.saveFile = normalizeFsPath(file);
+      if (mode !== "demo" && mode !== "watch") this.config.mode = "watch";
+      touched = true;
+    }
+    if (pollRaw) {
+      const poll = Number(pollRaw);
+      if (Number.isFinite(poll) && poll > 0) {
+        this.config.pollIntervalSeconds = nearestPollInterval(poll);
+        touched = true;
+      }
+    }
+    return touched;
+  }
+
   private async loadConfig(): Promise<void> {
     try {
       const raw = await fs.readFile(CONFIG_PATH, "utf8");
@@ -401,6 +494,9 @@ export class WorldHub {
     } catch {
       this.config = { ...DEFAULT_CONFIG };
     }
+    if (this.config.savesDir) this.config.savesDir = normalizeFsPath(this.config.savesDir);
+    if (this.config.saveFile) this.config.saveFile = normalizeFsPath(this.config.saveFile);
+    if (this.applyEnvOverlay()) await this.persistConfig();
   }
 
   private async persistConfig(): Promise<void> {

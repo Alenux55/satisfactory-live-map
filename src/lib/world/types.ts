@@ -1,5 +1,11 @@
 export const POLL_INTERVALS_SEC = [5, 10, 15, 30, 45, 60, 120, 180, 300, 600] as const;
 
+export function nearestPollInterval(seconds: number): (typeof POLL_INTERVALS_SEC)[number] {
+  return POLL_INTERVALS_SEC.reduce((best, value) =>
+    Math.abs(value - seconds) < Math.abs(best - seconds) ? value : best,
+  );
+}
+
 export type WorldMode = "demo" | "watch";
 
 export type EntityCategory =

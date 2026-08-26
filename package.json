@@ -8,6 +8,9 @@
     "start": "next start -H 0.0.0.0 -p 43147",
     "lint": "eslint"
   },
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "dependencies": {
     "@etothepii/satisfactory-file-parser": "^4.1.2",
     "class-variance-authority": "^0.7.1",

@@ -151,9 +151,8 @@ export function ControlPanel({
             }}
           />
           <p className="text-[11px] text-muted-foreground">
-            Unreal saves are one compressed blob, so a changed ~20&nbsp;MB file is still parsed on the
-            server. Unchanged files are hashed and skipped. The browser only receives added, moved, or
-            removed actors.
+            Match the dedicated-server autosave interval (often 5 minutes). Fast polls only add
+            stat/hash work; a changed ~20&nbsp;MB blob is still fully parsed on this machine.
           </p>
         </div>
 
@@ -172,13 +171,14 @@ export function ControlPanel({
                 void onConfig({ savesDir: dirDraft, saveFile: null, mode: "watch" });
               }
             }}
-            placeholder="/path/to/SaveGames"
+            placeholder="%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server"
             className="font-mono text-xs"
           />
           <p className="text-[11px] text-muted-foreground">
-            Dedicated servers typically write under{" "}
-            <span className="font-mono">FactoryGame/Saved/SaveGames</span>. Point this at a synced copy.
-            Newest <span className="font-mono">.sav</span> wins unless you upload one.
+            Windows dedicated server:{" "}
+            <span className="font-mono">%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server</span>.
+            Newest complete <span className="font-mono">.sav</span> wins. The watcher copies the file
+            first so a locked autosave does not stall Unreal.
           </p>
           <div className="flex gap-2">
             <input
