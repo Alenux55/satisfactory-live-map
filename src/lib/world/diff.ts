@@ -12,6 +12,9 @@ export function fingerprint(entity: MapEntity): string {
     entity.yaw.toFixed(1),
     entity.recipe ?? "",
     entity.label ?? "",
+    entity.purity ?? "",
+    entity.claimed === true ? "1" : "0",
+    entity.resource ?? "",
     path,
   ].join("|");
 }

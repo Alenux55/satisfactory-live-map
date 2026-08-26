@@ -33,6 +33,9 @@ function machine(
     recipe: extra?.recipe,
     label: extra?.label,
     path: extra?.path,
+    purity: extra?.purity,
+    claimed: extra?.claimed,
+    resource: extra?.resource,
   };
 }
 
@@ -90,6 +93,57 @@ export function buildDemoWorld(tick: number): MapEntity[] {
   entities.push(...foundationGrid(foundationCount));
 
   const minerCount = Math.min(3, 1 + Math.floor(t / 2));
+  entities.push(
+    machine("Iron", "resource", OX - 40, OY + 8, 0, 10, 10, {
+      id: "demo:node:iron-0",
+      resource: "iron",
+      purity: "pure",
+      claimed: minerCount >= 1,
+      label: "Iron · Pure",
+    }),
+    machine("Iron", "resource", OX - 40, OY + 30, 0, 10, 10, {
+      id: "demo:node:iron-1",
+      resource: "iron",
+      purity: "normal",
+      claimed: minerCount >= 2,
+      label: "Iron · Normal",
+    }),
+    machine("Copper", "resource", OX - 70, OY - 20, 0, 10, 10, {
+      id: "demo:node:copper",
+      resource: "copper",
+      purity: "impure",
+      claimed: false,
+      label: "Copper · Impure",
+    }),
+    machine("Limestone", "resource", OX + 40, OY - 50, 0, 10, 10, {
+      id: "demo:node:limestone",
+      resource: "limestone",
+      purity: "pure",
+      claimed: false,
+      label: "Limestone · Pure",
+    }),
+    machine("Coal", "resource", OX + 24, OY + 90, 0, 10, 10, {
+      id: "demo:node:coal",
+      resource: "coal",
+      purity: "normal",
+      claimed: false,
+      label: "Coal · Normal",
+    }),
+    machine("Water", "resource", OX - 70, OY + 40, 0, 10, 10, {
+      id: "demo:node:water",
+      resource: "water",
+      purity: "normal",
+      claimed: t >= 8,
+      label: "Water · Normal",
+    }),
+    machine("Geyser", "resource", OX + 110, OY - 40, 0, 10, 10, {
+      id: "demo:node:geyser",
+      resource: "geyser",
+      purity: "pure",
+      claimed: false,
+      label: "Geyser · Pure",
+    }),
+  );
   for (let i = 0; i < minerCount; i++) {
     const mx = OX - 40;
     const my = OY + 8 + i * 22;

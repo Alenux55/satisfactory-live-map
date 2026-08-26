@@ -10,6 +10,7 @@ export const CATEGORY_COLORS: Record<EntityCategory, string> = {
   special: "#f472b6",
   player: "#4ade80",
   vehicle: "#fb7185",
+  resource: "#6f505d",
   other: "#94a3b8",
 };
 
@@ -37,6 +38,7 @@ const SIZE_RULES: [RegExp, Size][] = [
   [/HubTerminal|Hub|WorkBench|Mam/i, { w: 16, h: 16 }],
   [/SpaceElevator/i, { w: 30, h: 30 }],
   [/TrainStation|FreightPlatform/i, { w: 16, h: 32 }],
+  [/ResourceNode|FrackingSatellite|FrackingCore|Geyser/i, { w: 10, h: 10 }],
   [/Char_Player|Player/i, { w: 2, h: 2 }],
   [/Tractor|Truck|Explorer|CyberWagon|FactoryCart/i, { w: 8, h: 12 }],
 ];
@@ -58,6 +60,9 @@ export function categorize(typePath: string): EntityCategory {
   if (/Char_Player|PlayerState/i.test(p)) return "player";
   if (/CyberWagon|FactoryCart|Wheeled|Explorer|Tractor|Truck|Golfcart/i.test(p) && !/TrainStation|Railroad/i.test(p)) {
     return "vehicle";
+  }
+  if (/ResourceNode|FrackingSatellite|FrackingCore|Geyser/i.test(p) && !/Miner|Extractor|Pump|Generator/i.test(p)) {
+    return "resource";
   }
   if (/Miner|OilPump|WaterPump|ResourceWell|FrackingExtractor|Geothermal/i.test(p)) {
     return "extraction";

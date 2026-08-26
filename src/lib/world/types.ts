@@ -18,6 +18,7 @@ export type EntityCategory =
   | "special"
   | "player"
   | "vehicle"
+  | "resource"
   | "other";
 
 export type Point = [number, number];
@@ -35,6 +36,9 @@ export type MapEntity = {
   recipe?: string;
   label?: string;
   path?: Point[];
+  purity?: "impure" | "normal" | "pure";
+  claimed?: boolean;
+  resource?: string;
 };
 
 export type SaveHeaderInfo = {
@@ -131,6 +135,7 @@ export const EMPTY_COUNTS: CategoryCounts = {
   special: 0,
   player: 0,
   vehicle: 0,
+  resource: 0,
   other: 0,
 };
 
@@ -144,6 +149,7 @@ export const CATEGORY_LABELS: Record<EntityCategory, string> = {
   special: "HUB & special",
   player: "Pioneers",
   vehicle: "Vehicles",
+  resource: "Resource nodes",
   other: "Other",
 };
 
@@ -157,5 +163,6 @@ export const DEFAULT_LAYERS: Record<EntityCategory, boolean> = {
   special: true,
   player: true,
   vehicle: true,
+  resource: true,
   other: false,
 };

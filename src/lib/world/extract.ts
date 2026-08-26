@@ -6,7 +6,10 @@ import {
 } from "@etothepii/satisfactory-file-parser";
 import { categorize, footprintFor, prettyType, shortType } from "./categorize";
 import { cmToMeters, yawFromQuaternion } from "./coords";
+import { parsePurity, resourceKind, RESOURCE_TYPE_LABELS } from "./resource";
 import type { MapEntity, Point, SaveHeaderInfo } from "./types";
+
+const NODE_CLAIM_RADIUS_M = 28;
 
 const INCLUDE =
   /Buildable|Char_Player|Vehicle|Explorer|Tractor|Truck|CyberWagon|FactoryCart|ConveyorChain|LightweightBuildable|PipeHyper|JumpPad|Locomotive|FreightWagon|GolfCart|GolfCart/i;
@@ -115,8 +118,28 @@ function splineFromProperties(entity: SaveEntity): Point[] | undefined {
   return downsample(points);
 }
 
+function isResourceNodeActor(typePath: string): boolean {
+  return (
+    /ResourceNode|FrackingSatellite|FrackingCore|Geyser/i.test(typePath) &&
+    !/Miner|Extractor|Pump|Generator/i.test(typePath)
+  );
+}
+
+function boolish(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    if (/^(true|1|yes)$/i.test(value)) return true;
+    if (/^(false|0|no)$/i.test(value)) return false;
+  }
+  const rec = asRecord(value);
+  if (rec && "value" in rec) return boolish(rec.value);
+  return undefined;
+}
+
 function shouldKeep(typePath: string): boolean {
   if (EXCLUDE.test(typePath) && !/LightweightBuildable/i.test(typePath)) return false;
+  if (isResourceNodeActor(typePath)) return true;
   return INCLUDE.test(typePath);
 }
 
@@ -125,11 +148,10 @@ function fromTransform(
   typePath: string,
   translation: { x: number; y: number; z: number },
   rotation: { x: number; y: number; z: number; w: number } | undefined,
-  extras?: Partial<Pick<MapEntity, "recipe" | "label" | "path">>,
+  extras?: Partial<MapEntity>,
 ): MapEntity {
   const size = footprintFor(typePath);
   return {
-    id,
     type: shortType(typePath),
     category: categorize(typePath),
     x: cmToMeters(translation.x),
@@ -139,7 +161,59 @@ function fromTransform(
     w: size.w,
     h: size.h,
     ...extras,
+    id,
   };
+}
+
+function extractResourceNode(obj: SaveEntity): MapEntity | null {
+  const translation = obj.transform?.translation;
+  if (!translation) return null;
+  const typePath = obj.typePath || "";
+  const resourcePath =
+    pathNameOf(propValue(obj, "mResourceClass")) ??
+    pathNameOf(propValue(obj, "mWhatToExtract")) ??
+    pathNameOf(propValue(obj, "mExtractResourceType")) ??
+    pathNameOf(propValue(obj, "Resource")) ??
+    typePath;
+  const kind = resourceKind(resourcePath, typePath);
+  const pretty = RESOURCE_TYPE_LABELS[kind] ?? kind;
+  const purity = parsePurity(
+    propValue(obj, "mPurity") ??
+      propValue(obj, "Purity") ??
+      propValue(obj, "mNodePurity") ??
+      propValue(obj, "mSavedPurity"),
+  );
+  const occupied = boolish(propValue(obj, "mIsOccupied") ?? propValue(obj, "mOccupied"));
+  const purityLabel = purity.charAt(0).toUpperCase() + purity.slice(1);
+  return fromTransform(
+    obj.instanceName || `${typePath}:${translation.x}:${translation.y}`,
+    typePath,
+    translation,
+    obj.transform.rotation,
+    {
+      type: pretty,
+      category: "resource",
+      resource: kind,
+      purity,
+      claimed: occupied === true,
+      label: `${pretty} · ${purityLabel}`,
+      w: 10,
+      h: 10,
+    },
+  );
+}
+
+function markNodesClaimed(entities: MapEntity[]): void {
+  const extractors = entities.filter((entity) => entity.category === "extraction");
+  for (const node of entities) {
+    if (node.category !== "resource" || node.claimed) continue;
+    for (const extractor of extractors) {
+      if (Math.hypot(extractor.x - node.x, extractor.y - node.y) <= NODE_CLAIM_RADIUS_M) {
+        node.claimed = true;
+        break;
+      }
+    }
+  }
 }
 
 function extractLightweight(obj: SaveEntity, into: MapEntity[]): void {
@@ -244,6 +318,15 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
         }
         extractConveyorChain(obj, entities);
         extractPowerLine(obj, entities);
+        if (isResourceNodeActor(obj.typePath)) {
+          const node = extractResourceNode(obj);
+          if (node) {
+            if (seen.has(node.id)) continue;
+            seen.add(node.id);
+            entities.push(node);
+          }
+          continue;
+        }
         if (!shouldKeep(obj.typePath)) continue;
         if (/ConveyorChainActor|LightweightBuildable/i.test(obj.typePath)) continue;
         const translation = obj.transform?.translation;
@@ -266,6 +349,7 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
     }
   }
 
+  markNodesClaimed(entities);
   return entities;
 }
 

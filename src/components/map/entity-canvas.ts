@@ -2,6 +2,7 @@ import type { Map as LeafletMap, LeafletMouseEvent } from "leaflet";
 import type { EntityCategory, MapEntity } from "@/lib/world/types";
 import { CATEGORY_COLORS } from "@/lib/world/categorize";
 import { worldToLatLng } from "@/lib/world/coords";
+import { PURITY_COLORS, RESOURCE_TYPE_COLORS } from "@/lib/world/resource";
 
 type LayerFlags = Record<EntityCategory, boolean>;
 
@@ -67,6 +68,34 @@ export function attachEntityCanvas(
       }
 
       const p = map.latLngToContainerPoint(worldToLatLng(entity.x, entity.y));
+      if (entity.category === "resource") {
+        const radius = Math.max(4, metersToPx(entity.claimed ? 4 : 7));
+        const fill = entity.purity ? PURITY_COLORS[entity.purity] : "#888888";
+        const stroke = RESOURCE_TYPE_COLORS[entity.resource ?? "unknown"] ?? RESOURCE_TYPE_COLORS.unknown;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.globalAlpha = 0.95;
+        ctx.fill();
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 2.5;
+        ctx.globalAlpha = 1;
+        ctx.stroke();
+        if (entity.id === selectedId) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius + 3, 0, Math.PI * 2);
+          ctx.strokeStyle = "#fff7ed";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        if (showLabels) {
+          ctx.fillStyle = "#fff7ed";
+          ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(entity.label || entity.type, p.x, p.y - radius - 4);
+        }
+        continue;
+      }
       const w = metersToPx(entity.w);
       const h = metersToPx(entity.h);
       ctx.save();
@@ -133,7 +162,8 @@ export function attachEntityCanvas(
       if (entity.category === "organization" && zoom < 0) continue;
       const p = map.latLngToContainerPoint(worldToLatLng(entity.x, entity.y));
       const dist = Math.hypot(p.x - click.x, p.y - click.y);
-      if (dist > threshold) continue;
+      const maxDist = entity.category === "resource" ? threshold + 6 : threshold;
+      if (dist > maxDist) continue;
       if (
         !best ||
         dist < best.dist ||

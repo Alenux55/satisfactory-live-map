@@ -13,6 +13,12 @@ import { Switch } from "@/components/ui/switch";
 import { CATEGORY_COLORS, prettyType } from "@/lib/world/categorize";
 import { formatBytes, formatDuration, formatInterval } from "@/lib/world/coords";
 import {
+  PURITY_COLORS,
+  RESOURCE_LEGEND_ORDER,
+  RESOURCE_TYPE_COLORS,
+  RESOURCE_TYPE_LABELS,
+} from "@/lib/world/resource";
+import {
   CATEGORY_LABELS,
   POLL_INTERVALS_SEC,
   type EntityCategory,
@@ -323,6 +329,38 @@ export function ControlPanel({
               </label>
             ))}
           </div>
+          {layers.resource ? (
+            <div className="mt-3 rounded-md border border-border/70 bg-card/50 p-2.5">
+              <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                Node legend
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Outline is type, fill is purity. Smaller circles are claimed.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-3">
+                {(["impure", "normal", "pure"] as const).map((purity) => (
+                  <span key={purity} className="inline-flex items-center gap-1.5 text-[11px] capitalize">
+                    <span
+                      className="size-2.5 rounded-full border border-foreground/40"
+                      style={{ background: PURITY_COLORS[purity] }}
+                    />
+                    {purity}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1">
+                {RESOURCE_LEGEND_ORDER.map((kind) => (
+                  <span key={kind} className="inline-flex items-center gap-1.5 text-[11px]">
+                    <span
+                      className="size-2.5 rounded-full"
+                      style={{ background: RESOURCE_TYPE_COLORS[kind], boxShadow: "inset 0 0 0 1px rgb(0 0 0 / 0.35)" }}
+                    />
+                    {RESOURCE_TYPE_LABELS[kind]}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {selected ? (
@@ -348,6 +386,26 @@ export function ControlPanel({
                   <>
                     <dt>Recipe</dt>
                     <dd className="text-foreground">{selected.recipe}</dd>
+                  </>
+                ) : null}
+                {selected.resource ? (
+                  <>
+                    <dt>Resource</dt>
+                    <dd className="text-foreground">
+                      {RESOURCE_TYPE_LABELS[selected.resource] ?? selected.resource}
+                    </dd>
+                  </>
+                ) : null}
+                {selected.purity ? (
+                  <>
+                    <dt>Purity</dt>
+                    <dd className="capitalize text-foreground">{selected.purity}</dd>
+                  </>
+                ) : null}
+                {selected.category === "resource" ? (
+                  <>
+                    <dt>Claimed</dt>
+                    <dd className="text-foreground">{selected.claimed ? "yes" : "no"}</dd>
                   </>
                 ) : null}
               </dl>
