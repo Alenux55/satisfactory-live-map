@@ -11,6 +11,7 @@
     powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Uninstall
 
   Rebuild optional: -Pull  to git pull before npm run build.
+  Start/Rebuild host the map as a hidden FICSIT Live Map process (not a PowerShell window).
 #>
 param(
   [Parameter(Mandatory = $true, Position = 0)]
@@ -27,11 +28,73 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $PidFile = Join-Path $RepoRoot "data\server.pid"
-$RunPs1 = Join-Path $RepoRoot "scripts\windows\run.ps1"
+$RunPs1 = Join-Path $PSScriptRoot "run.ps1"
+$LauncherSrc = Join-Path $PSScriptRoot "launcher.cs"
+$LauncherExe = Join-Path $RepoRoot "data\FicsitLiveMap.exe"
+$LauncherIcon = Join-Path $RepoRoot "src\app\favicon.ico"
 $PowerShell = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
 
 function Get-Task {
   return Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+}
+
+function Get-Csc {
+  $candidates = @(
+    (Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"),
+    (Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe")
+  )
+  foreach ($path in $candidates) {
+    if (Test-Path $path) { return $path }
+  }
+  return $null
+}
+
+function Get-LauncherExe {
+  $csc = Get-Csc
+  if (-not $csc) {
+    throw "Missing .NET Framework C# compiler (csc.exe). Install .NET Framework 4.8 Developer Pack, or the in-box 4.x runtime compiler."
+  }
+  $stale = -not (Test-Path $LauncherExe)
+  if (-not $stale) {
+    $stale = (Get-Item $LauncherSrc).LastWriteTimeUtc -gt (Get-Item $LauncherExe).LastWriteTimeUtc
+  }
+  if ($stale) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $LauncherExe) | Out-Null
+    $compileArgs = @("/nologo", "/target:winexe", "/optimize+", "/out:$LauncherExe")
+    if (Test-Path $LauncherIcon) { $compileArgs += "/win32icon:$LauncherIcon" }
+    $compileArgs += $LauncherSrc
+    $output = & $csc @compileArgs 2>&1
+    if ($LASTEXITCODE -ne 0 -and (Test-Path $LauncherIcon)) {
+      Write-Warning "Could not embed map icon; compiling without it."
+      $compileArgs = @("/nologo", "/target:winexe", "/optimize+", "/out:$LauncherExe", $LauncherSrc)
+      $output = & $csc @compileArgs 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+      throw "Could not compile FICSIT Live Map launcher: $output"
+    }
+  }
+  return $LauncherExe
+}
+
+function Get-HiddenPowerShellArgs {
+  return "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$RunPs1`" -Port $Port"
+}
+
+function Get-MapAction {
+  try {
+    $exe = Get-LauncherExe
+    $node = (Get-Command node -ErrorAction Stop).Source
+    $arg = "-Repo `"$RepoRoot`" -Port $Port -Node `"$node`""
+    return New-ScheduledTaskAction -Execute $exe -Argument $arg -WorkingDirectory $RepoRoot
+  } catch {
+    Write-Warning "$_ Falling back to a hidden PowerShell host."
+    return New-ScheduledTaskAction -Execute $PowerShell -Argument (Get-HiddenPowerShellArgs) -WorkingDirectory $RepoRoot
+  }
+}
+
+function Update-TaskAction {
+  if (-not (Get-Task)) { return }
+  Set-ScheduledTask -TaskName $TaskName -Action (Get-MapAction) | Out-Null
 }
 
 function Stop-ProcessTree {
@@ -58,6 +121,8 @@ function Stop-MapProcess {
   if (Test-Path $PidFile) {
     Remove-Item -Force $PidFile -ErrorAction SilentlyContinue
   }
+  Get-Process -Name "FicsitLiveMap" -ErrorAction SilentlyContinue |
+    ForEach-Object { Stop-ProcessTree -ProcessId $_.Id }
 }
 
 function Wait-Port {
@@ -77,8 +142,7 @@ function Invoke-Install {
     throw "Build the app first: powershell -ExecutionPolicy Bypass -File .\scripts\windows\setup.ps1"
   }
   $node = (Get-Command node -ErrorAction Stop).Source
-  $arg = "-NoProfile -ExecutionPolicy Bypass -File `"$RunPs1`" -Port $Port"
-  $actionObj = New-ScheduledTaskAction -Execute $PowerShell -Argument $arg -WorkingDirectory $RepoRoot
+  $actionObj = Get-MapAction
   $startup = New-ScheduledTaskTrigger -AtStartup
   $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
   $settings = New-ScheduledTaskSettingsSet `
@@ -111,14 +175,23 @@ function Invoke-Uninstall {
 }
 
 function Invoke-Start {
+  Update-TaskAction
   $task = Get-Task
   if ($task) {
     Start-ScheduledTask -TaskName $TaskName
-    Write-Host "Started scheduled task '$TaskName'."
+    Write-Host "Started scheduled task '$TaskName' (no console window)."
   } else {
     Write-Host "No scheduled task yet. Starting in the background. Use Install for boot."
-    Start-Process -FilePath $PowerShell -WorkingDirectory $RepoRoot -WindowStyle Hidden `
-      -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$RunPs1`" -Port $Port"
+    try {
+      $exe = Get-LauncherExe
+      $node = (Get-Command node -ErrorAction Stop).Source
+      Start-Process -FilePath $exe -WorkingDirectory $RepoRoot -WindowStyle Hidden `
+        -ArgumentList @("-Repo", $RepoRoot, "-Port", "$Port", "-Node", $node)
+    } catch {
+      Write-Warning "$_ Falling back to a hidden PowerShell host."
+      Start-Process -FilePath $PowerShell -WorkingDirectory $RepoRoot -WindowStyle Hidden `
+        -ArgumentList (Get-HiddenPowerShellArgs)
+    }
   }
   if (Wait-Port -Open -Seconds 45) {
     Write-Host "Listening on 0.0.0.0:$Port"

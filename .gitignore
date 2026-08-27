@@ -55,6 +55,7 @@ next-env.d.ts
 /data/auth-secret.txt
 /data/server.log
 /data/server.pid
+/data/FicsitLiveMap.exe
 /data/world-map.jpg
 /data/world-map.jpg.part
 /data/icons/*

@@ -137,7 +137,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Rebuild -
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Uninstall
 ```
 
-`Install` registers a Scheduled Task that starts **at boot** and **at logon**, restarts on crash, then starts the map. `Rebuild` stops it, runs `npm install` then `npm run build`, and starts it again. `-Pull` does `git pull` first.
+`Install` registers a Scheduled Task that starts **at boot** and **at logon**, restarts on crash, then starts the map. Start/Rebuild run **without a console window**; Task Manager shows **FICSIT Live Map** (map favicon) instead of Windows PowerShell. Logs stay in `data\server.log`. `Rebuild` stops it, runs `npm install` then `npm run build`, and starts it again. `-Pull` does `git pull` first.
 
 `data\server.pid` is how Stop finds the Node process (Task Scheduler alone often leaves a grandchild `node` running).
 
