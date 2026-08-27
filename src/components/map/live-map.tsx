@@ -27,7 +27,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { attachEntityCanvas, type EntityCanvasHandle } from "@/components/map/entity-canvas";
 import { ControlPanel } from "@/components/map/control-panel";
 import { LayersPanel } from "@/components/map/layers-panel";
-import type { PublicUser } from "@/lib/auth/types";
+import { SidebarResizeHandle } from "@/components/map/sidebar-resize";
+import {
+  clampSidebarWidth,
+  DEFAULT_LEFT_WIDTH,
+  DEFAULT_RIGHT_WIDTH,
+  type PublicUser,
+} from "@/lib/auth/types";
 
 export function LiveMap() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +55,8 @@ export function LiveMap() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [terrainReady, setTerrainReady] = useState(false);
+  const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
+  const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
   const mapRef = useRef<LeafletMap | null>(null);
   const overlaysRef = useRef<{ schematic: ImageOverlay; terrain: ImageOverlay | null } | null>(null);
   const zTouchedRef = useRef(false);
@@ -69,6 +77,8 @@ export function LiveMap() {
       setServerId(body.user.prefs.serverId || DEMO_SERVER_ID);
       setLayers(body.user.prefs.layers ?? DEFAULT_LAYERS);
       setHiddenTypes(body.user.prefs.hiddenTypes ?? []);
+      setLeftWidth(clampSidebarWidth(body.user.prefs.leftWidth, DEFAULT_LEFT_WIDTH));
+      setRightWidth(clampSidebarWidth(body.user.prefs.rightWidth, DEFAULT_RIGHT_WIDTH));
       setPrefsReady(true);
     })();
   }, []);
@@ -242,6 +252,28 @@ export function LiveMap() {
   }, []);
 
   useEffect(() => {
+    mapRef.current?.invalidateSize();
+  }, [leftWidth, rightWidth]);
+
+  const resizeLeft = useCallback((delta: number) => {
+    setLeftWidth((width) => {
+      const mapMin = 280;
+      const max = typeof window === "undefined" ? 560 : Math.min(560, window.innerWidth - rightWidth - mapMin);
+      return clampSidebarWidth(width + delta, DEFAULT_LEFT_WIDTH) <= max
+        ? Math.min(max, Math.max(240, width + delta))
+        : width;
+    });
+  }, [rightWidth]);
+
+  const resizeRight = useCallback((delta: number) => {
+    setRightWidth((width) => {
+      const mapMin = 280;
+      const max = typeof window === "undefined" ? 560 : Math.min(560, window.innerWidth - leftWidth - mapMin);
+      return Math.min(max, Math.max(240, width + delta));
+    });
+  }, [leftWidth]);
+
+  useEffect(() => {
     const map = mapRef.current;
     const overlays = overlaysRef.current;
     if (!map || !overlays) return;
@@ -263,12 +295,12 @@ export function LiveMap() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "prefs",
-          prefs: { serverId, layers, hiddenTypes },
+          prefs: { serverId, layers, hiddenTypes, leftWidth, rightWidth },
         }),
       });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [account, hiddenTypes, layers, prefsReady, serverId]);
+  }, [account, hiddenTypes, layers, leftWidth, prefsReady, rightWidth, serverId]);
 
   useEffect(() => {
     if (!prefsReady) return;
@@ -344,13 +376,10 @@ export function LiveMap() {
       zExtent={zExtent}
       zLower={zLower}
       zUpper={zUpper}
-      onZLower={(value) => {
+      onZRange={(lo, hi) => {
         zTouchedRef.current = true;
-        setZLower(Math.min(value, zUpper));
-      }}
-      onZUpper={(value) => {
-        zTouchedRef.current = true;
-        setZUpper(Math.max(value, zLower));
+        setZLower(lo);
+        setZUpper(hi);
       }}
       onZReset={() => {
         zTouchedRef.current = false;
@@ -368,9 +397,15 @@ export function LiveMap() {
   );
 
   return (
-    <div className="flex h-dvh min-h-0 bg-background">
-      <aside className="hidden w-[320px] shrink-0 border-r border-border bg-sidebar md:block">{panel}</aside>
-      <div className="relative min-w-0 flex-1">
+    <div className="flex h-dvh min-h-0 overflow-hidden bg-background">
+      <aside
+        className="relative hidden h-full min-h-0 shrink-0 overflow-hidden border-r border-border bg-sidebar md:flex md:flex-col"
+        style={{ width: leftWidth }}
+      >
+        {panel}
+        <SidebarResizeHandle edge="left" onDelta={resizeLeft} />
+      </aside>
+      <div className="relative h-full min-h-0 min-w-0 flex-1">
         <div ref={containerRef} className="h-full w-full bg-[#0c1c2c]" />
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
           <div className="pointer-events-auto md:hidden">
@@ -417,7 +452,11 @@ export function LiveMap() {
           </div>
         </div>
       </div>
-      <aside className="hidden w-[300px] shrink-0 border-l border-border bg-sidebar md:block">
+      <aside
+        className="relative hidden h-full min-h-0 min-w-0 shrink-0 overflow-hidden border-l border-border bg-sidebar md:flex md:flex-col"
+        style={{ width: rightWidth }}
+      >
+        <SidebarResizeHandle edge="right" onDelta={resizeRight} />
         <LayersPanel
           entities={entityMap}
           layers={layers}

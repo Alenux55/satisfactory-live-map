@@ -47,6 +47,7 @@ next-env.d.ts
 /data/staging/*
 /data/config.json
 /data/users.json
+/data/smtp.json
 /data/reset-tokens.json
 /data/auth-secret.txt
 /data/server.log

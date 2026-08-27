@@ -6,6 +6,8 @@ export type UserPrefs = {
   serverId: string;
   layers: Record<EntityCategory, boolean>;
   hiddenTypes: string[];
+  leftWidth: number;
+  rightWidth: number;
 };
 
 export type UserRecord = {
@@ -38,11 +40,21 @@ export const SESSION_DAYS = 14;
 export const RESET_TTL_MS = 60 * 60 * 1000;
 export const MIN_PASSWORD_LENGTH = 8;
 
+export const DEFAULT_LEFT_WIDTH = 320;
+export const DEFAULT_RIGHT_WIDTH = 300;
+
+export function clampSidebarWidth(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(560, Math.max(240, Math.round(value)));
+}
+
 export function defaultPrefs(): UserPrefs {
   return {
     serverId: DEMO_SERVER_ID,
     layers: { ...DEFAULT_LAYERS },
     hiddenTypes: [],
+    leftWidth: DEFAULT_LEFT_WIDTH,
+    rightWidth: DEFAULT_RIGHT_WIDTH,
   };
 }
 

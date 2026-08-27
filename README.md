@@ -189,13 +189,14 @@ First visit opens **Create the admin account**. After that, `/login` is required
 
 - **Admin**: add/remove save locations, poll interval, upload, manage users
 - **Viewer**: pick a server, layers, height slice, terrain — their own settings
-- **Forgot password**: needs SMTP env vars and an email on the account. Admins can also **Set password** on `/admin/users`
+- **Forgot password**: needs SMTP (Admin → Mail, or env vars) and an email on the account. Admins can also **Set password** on `/admin/users`
 - Users live in `data/users.json` (gitignored). Session cookie is signed with `FICSIT_AUTH_SECRET` or `data/auth-secret.txt`
+- SMTP from the UI is stored in `data/smtp.json` (gitignored) and applies without a restart. Env vars are the fallback.
 
 | Variable | Meaning |
 | --- | --- |
 | `FICSIT_PUBLIC_URL` | Origin used in reset emails, e.g. `http://192.168.1.10:43147` |
-| `FICSIT_SMTP_HOST` / `PORT` / `USER` / `PASS` / `FROM` | SMTP for reset mail |
+| `FICSIT_SMTP_HOST` / `PORT` / `USER` / `PASS` / `FROM` | SMTP for reset mail (or set these in Admin → Mail) |
 | `FICSIT_SMTP_SECURE` | `1` for implicit TLS (port 465) |
 | `FICSIT_AUTH_SECRET` | Cookie HMAC key (generated on first boot if unset) |
 

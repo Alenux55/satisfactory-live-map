@@ -38,7 +38,7 @@ export async function GET() {
     const user = await currentUser();
     return NextResponse.json({
       setupRequired,
-      smtpConfigured: smtpConfigured(),
+      smtpConfigured: await smtpConfigured(),
       user: user ? toPublicUser(user) : null,
     });
   });
@@ -99,14 +99,14 @@ export async function POST(request: Request) {
 
     if (action === "forgot") {
       const identifier = String(body.username ?? body.email ?? "").trim();
-      if (identifier && smtpConfigured()) {
+      if (identifier && (await smtpConfigured())) {
         const user = identifier.includes("@")
           ? await getUserByEmail(identifier)
           : await getUserByUsername(identifier);
         if (user?.email) {
           try {
             const token = await createResetToken(user.id);
-            const url = `${publicOrigin(request)}/reset?token=${encodeURIComponent(token)}`;
+            const url = `${await publicOrigin(request)}/reset?token=${encodeURIComponent(token)}`;
             await sendPasswordResetEmail(user.email, url);
           } catch (error) {
             logger.error("password reset email failed", {
@@ -117,8 +117,8 @@ export async function POST(request: Request) {
       }
       return NextResponse.json({
         ok: true,
-        smtpConfigured: smtpConfigured(),
-        message: smtpConfigured()
+        smtpConfigured: await smtpConfigured(),
+        message: (await smtpConfigured())
           ? "If that account has an email address, a reset link is on its way."
           : "Password reset email is not configured. Ask an admin to set a new password.",
       });

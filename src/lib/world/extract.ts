@@ -70,7 +70,17 @@ function pathNameOf(value: unknown): string | undefined {
   const rec = asRecord(value);
   if (!rec) return undefined;
   if (typeof rec.pathName === "string") return rec.pathName;
+  if (rec.itemReference) return pathNameOf(rec.itemReference);
   return pathNameOf(rec.value);
+}
+
+function unwrapNum(value: unknown, depth = 0): number | undefined {
+  if (depth > 6) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const rec = asRecord(value);
+  if (!rec) return undefined;
+  if (typeof rec.value === "number" && Number.isFinite(rec.value)) return rec.value;
+  return unwrapNum(rec.value, depth + 1);
 }
 
 function harvestStrings(value: unknown, into: string[], depth = 0): void {
@@ -101,7 +111,9 @@ function arrayValues(raw: unknown): unknown[] {
   if (Array.isArray(raw)) return raw;
   const rec = asRecord(raw);
   if (Array.isArray(rec?.values)) return rec.values as unknown[];
-  if (Array.isArray(asRecord(rec?.value)?.values)) return asRecord(rec?.value)!.values as unknown[];
+  const inner = asRecord(rec?.value);
+  if (Array.isArray(inner?.values)) return inner.values as unknown[];
+  if (Array.isArray(rec?.value)) return rec.value as unknown[];
   return [];
 }
 
@@ -119,79 +131,112 @@ function playerName(entity: SaveEntity): string | undefined {
   return undefined;
 }
 
-function floatProp(entity: SaveEntity, name: string): number | undefined {
-  const value = propValue(entity, name);
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  const rec = asRecord(value);
-  if (typeof rec?.value === "number" && Number.isFinite(rec.value)) return rec.value;
-  return undefined;
+function floatProp(entity: SaveObjectLike, name: string): number | undefined {
+  return unwrapNum(propValue(entity, name)) ?? unwrapNum(entity.properties?.[name]);
 }
 
 function countMatchingItems(stacks: unknown, match: RegExp): number {
   let total = 0;
   for (const stack of arrayValues(stacks)) {
     const bag = asRecord(stack);
-    const props = asRecord(bag?.properties) ?? bag;
+    const props = asRecord(bag?.properties) ?? asRecord(asRecord(bag?.value)?.properties) ?? bag;
     if (!props) continue;
-    const item = pathNameOf(props.Item) ?? pathNameOf(asRecord(props.Item)?.itemReference) ?? "";
-    const amount = num(asRecord(props.NumItems)?.value ?? props.NumItems, 0);
+    const item =
+      pathNameOf(props.Item) ??
+      pathNameOf(asRecord(props.Item)?.itemReference) ??
+      pathNameOf(asRecord(asRecord(props.Item)?.value)?.itemReference) ??
+      pathNameOf(props.item) ??
+      "";
+    const amount = unwrapNum(props.NumItems) ?? unwrapNum(props.numItems) ?? num(props.NumItems, 0);
     if (match.test(item)) total += amount;
   }
   return total;
 }
 
+function lookupByName(byName: Map<string, SaveObjectLike>, path: string): SaveObjectLike | undefined {
+  const direct = byName.get(path);
+  if (direct) return direct;
+  if (path.length < 16) return undefined;
+  for (const [name, obj] of byName) {
+    if (name.endsWith(path) || name.endsWith(`.${path}`)) return obj;
+  }
+  return undefined;
+}
+
 function inventoryFromRef(byName: Map<string, SaveObjectLike>, ref: unknown): SaveComponent | null {
   const path = pathNameOf(ref);
   if (!path) return null;
-  const obj = byName.get(path);
+  const obj = lookupByName(byName, path);
   if (!obj || !isSaveComponent(obj)) return null;
   return obj;
+}
+
+function allInventories(obj: SaveEntity, byName: Map<string, SaveObjectLike>): SaveComponent[] {
+  const found: SaveComponent[] = [];
+  const seen = new Set<string>();
+  const add = (inv: SaveComponent | null | undefined) => {
+    if (!inv) return;
+    const id = inv.instanceName ?? `${found.length}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    found.push(inv);
+  };
+  add(inventoryFromRef(byName, propValue(obj, "mInventoryPotential")));
+  add(inventoryFromRef(byName, propValue(obj, "mInventoryProductionBoost")));
+  add(inventoryFromComponents(obj, byName, /InventoryPotential|InventoryProductionBoost|ProductionBoost|PotentialInventory/i));
+  for (const ref of obj.components ?? []) {
+    const path = typeof ref === "string" ? ref : pathNameOf(ref);
+    if (!path) continue;
+    const child = lookupByName(byName, path);
+    if (child && isSaveComponent(child)) add(child);
+  }
+  return found;
 }
 
 function inventoryFromComponents(obj: SaveEntity, byName: Map<string, SaveObjectLike>, match: RegExp): SaveComponent | null {
   for (const ref of obj.components ?? []) {
     const path = typeof ref === "string" ? ref : pathNameOf(ref);
     if (!path || !match.test(path)) continue;
-    const found = byName.get(path);
+    const found = lookupByName(byName, path);
     if (found && isSaveComponent(found)) return found;
   }
   return null;
 }
 
+function stacksOf(inv: SaveComponent): unknown {
+  return inv.properties?.mInventoryStacks ?? propValue(inv, "mInventoryStacks");
+}
+
 function factoryExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Partial<MapEntity> {
   const extras: Partial<MapEntity> = {};
   const potential = floatProp(obj, "mCurrentPotential") ?? floatProp(obj, "mPendingPotential");
-  const boost = floatProp(obj, "mCurrentProductionBoost");
-  const shardInv =
-    inventoryFromRef(byName, propValue(obj, "mInventoryPotential")) ??
-    inventoryFromComponents(obj, byName, /InventoryPotential|PotentialInventory/i);
-  if (shardInv) {
-    const shards = countMatchingItems(
-      propValue(shardInv, "mInventoryStacks") ?? shardInv.properties?.mInventoryStacks,
-      /CrystalShard|PowerShard|Desc_Crystal/i,
-    );
-    if (shards > 0) extras.powerShards = shards;
+  const boost = floatProp(obj, "mCurrentProductionBoost") ?? floatProp(obj, "mPendingProductionBoost");
+  const inventories = allInventories(obj, byName);
+  let shards = 0;
+  let sloops = 0;
+  for (const inv of inventories) {
+    const stacks = stacksOf(inv);
+    shards += countMatchingItems(stacks, /CrystalShard|PowerShard|Desc_CrystalShard/i);
+    sloops += countMatchingItems(stacks, /Somersloop|Desc_WAT1|Desc_Somersloop/i);
   }
   if (typeof potential === "number") {
-    extras.clock = Math.round(potential * 1000) / 10;
+    extras.clock = potential > 12 ? Math.round(potential * 10) / 10 : Math.round(potential * 1000) / 10;
   }
   if (typeof boost === "number" && boost > 1.01) {
     extras.somersloops = Math.max(1, Math.round(Math.log2(boost)));
-  } else {
-    const sloopInv =
-      inventoryFromRef(byName, propValue(obj, "mInventoryProductionBoost")) ??
-      inventoryFromComponents(obj, byName, /InventoryProductionBoost|ProductionBoost/i);
-    if (sloopInv) {
-      const sloops = countMatchingItems(
-        propValue(sloopInv, "mInventoryStacks") ?? sloopInv.properties?.mInventoryStacks,
-        /Somersloop|WAT1|Desc_WAT1|Desc_Somersloop/i,
-      );
-      if (sloops > 0) extras.somersloops = sloops;
-    }
+  } else if (sloops > 0) {
+    extras.somersloops = sloops;
   }
-  const clockFactor = (extras.clock ?? 100) / 100;
-  const sloopFactor = extras.somersloops ? 2 ** extras.somersloops : typeof boost === "number" ? boost : 1;
-  if (extras.clock != null || extras.somersloops != null || extras.powerShards != null) {
+  const isFactory =
+    /Constructor|Assembler|Manufacturer|Smelter|Foundry|Refinery|Blender|Packager|Converter|Encoder|Accelerator|Hadron|Mixer|Miner|OilPump|WaterPump|ResourceWell|Fracking|Generator|Nuclear|Particle|Quantum/i.test(
+      obj.typePath,
+    );
+  if (isFactory) {
+    extras.clock = extras.clock ?? 100;
+    extras.powerShards = shards;
+    extras.somersloops = extras.somersloops ?? sloops;
+    const clockFactor = extras.clock / 100;
+    const sloopFactor = extras.somersloops ? 2 ** extras.somersloops : typeof boost === "number" ? boost : 1;
     extras.production = Math.round(clockFactor * sloopFactor * 1000) / 10;
   }
   const extracted = resourceFromBlob(
@@ -395,6 +440,14 @@ function extractLightweight(obj: SaveEntity, into: MapEntity[]): void {
   }
 }
 
+function typeFromInstance(path: string): string | undefined {
+  const build = path.match(/Build_([A-Za-z0-9]+)/);
+  if (build?.[1]) return build[1];
+  const belt = path.match(/ConveyorBeltMk\d+/i);
+  if (belt?.[0]) return belt[0];
+  return undefined;
+}
+
 function extractConveyorChain(obj: SaveEntity, into: MapEntity[]): void {
   const special = asRecord(obj.specialProperties);
   if (!special || special.type !== "ConveyorChainActorSpecialProperties") return;
@@ -413,7 +466,7 @@ function extractConveyorChain(obj: SaveEntity, into: MapEntity[]): void {
     const beltRef = pathNameOf(rec.beltRef) ?? `${obj.instanceName}:${i}`;
     into.push({
       id: `belt:${beltRef}`,
-      type: "Conveyor",
+      type: typeFromInstance(beltRef) ?? "ConveyorBeltMk1",
       category: "logistics",
       x: start[0],
       y: start[1],

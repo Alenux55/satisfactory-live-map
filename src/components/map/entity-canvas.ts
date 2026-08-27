@@ -20,6 +20,14 @@ export type EntityCanvasHandle = {
 
 const iconCache = new Map<string, HTMLImageElement | "fail">();
 
+function distToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = dx * dx + dy * dy;
+  const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
 function loadIcon(candidates: string[], onReady: () => void): HTMLImageElement | null {
   const src = iconSrc(candidates);
   if (!src) return null;
@@ -200,28 +208,62 @@ export function attachEntityCanvas(
     draw();
   };
 
+  const isStructure = (entity: MapEntity) =>
+    entity.category === "foundations" || entity.category === "walls" || entity.category === "architecture";
+
   const pick = (event: LeafletMouseEvent): MapEntity | null => {
     const click = event.containerPoint;
     const zoom = map.getZoom();
-    const threshold = zoom < -1 ? 18 : 12;
-    let best: { entity: MapEntity; dist: number } | null = null;
+    const scale = map.getZoomScale(zoom, 0);
+    const metersToPx = (meters: number) => Math.max(2, meters * scale * 0.45);
+    const pad = zoom < -1 ? 10 : 6;
+    let best: { entity: MapEntity; dist: number; area: number } | null = null;
+
     for (const entity of entities.values()) {
       if (!visible(entity)) continue;
-      if ((entity.category === "foundations" || entity.category === "walls" || entity.category === "architecture") && zoom < 0) {
-        continue;
-      }
+      if (isStructure(entity) && zoom < 0) continue;
+
       const p = map.latLngToContainerPoint(worldToLatLng(entity.x, entity.y));
       const dist = Math.hypot(p.x - click.x, p.y - click.y);
-      const maxDist = entity.category === "resource" ? threshold + 6 : threshold;
-      if (dist > maxDist) continue;
+      let hit = false;
+      let area = 64;
+
+      if (entity.path && entity.path.length >= 2) {
+        const threshold = zoom < -1 ? 14 : 10;
+        hit = dist <= threshold;
+        for (let i = 1; !hit && i < entity.path.length; i += 1) {
+          const a = map.latLngToContainerPoint(worldToLatLng(entity.path[i - 1][0], entity.path[i - 1][1]));
+          const b = map.latLngToContainerPoint(worldToLatLng(entity.path[i][0], entity.path[i][1]));
+          hit = distToSegment(click.x, click.y, a.x, a.y, b.x, b.y) <= threshold;
+        }
+        area = 8;
+      } else if (entity.category === "resource") {
+        hit = dist <= Math.max(10, metersToPx(7) + pad);
+        area = 80;
+      } else if (entity.category === "player") {
+        hit = dist <= 14;
+        area = 20;
+      } else {
+        const w = Math.max(14, metersToPx(entity.w) + pad * 2);
+        const h = Math.max(14, metersToPx(entity.h) + pad * 2);
+        const yaw = (entity.yaw * Math.PI) / 180;
+        const dx = click.x - p.x;
+        const dy = click.y - p.y;
+        const lx = dx * Math.cos(yaw) + dy * Math.sin(yaw);
+        const ly = -dx * Math.sin(yaw) + dy * Math.cos(yaw);
+        hit = Math.abs(lx) <= w / 2 && Math.abs(ly) <= h / 2;
+        area = w * h;
+      }
+      if (!hit) continue;
+
       if (
         !best ||
-        dist < best.dist ||
-        ((best.entity.category === "foundations" || best.entity.category === "walls") &&
-          entity.category !== "foundations" &&
-          entity.category !== "walls")
+        (isStructure(best.entity) && !isStructure(entity)) ||
+        (isStructure(entity) === isStructure(best.entity) &&
+          (area < best.area * 0.85 || (area <= best.area && dist < best.dist)))
       ) {
-        best = { entity, dist };
+        if (best && isStructure(entity) && !isStructure(best.entity)) continue;
+        best = { entity, dist, area };
       }
     }
     return best?.entity ?? null;

@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { PublicUser, UserRole } from "@/lib/auth/types";
 
 export function UsersAdmin({ selfId }: { selfId: string }) {
-  const router = useRouter();
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState("");
@@ -91,19 +89,10 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 p-6">
-      <div>
-        <p className="font-heading text-[11px] tracking-[0.22em] text-primary uppercase">FICSIT Cartography</p>
-        <div className="mt-1 flex items-end justify-between gap-3">
-          <h1 className="font-heading text-2xl">Accounts</h1>
-          <Button size="sm" variant="outline" onClick={() => router.push("/")}>
-            Back to map
-          </Button>
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Admins can change the server catalog. Viewers pick a world and their own layers.
-        </p>
-      </div>
+    <>
+      <p className="text-sm text-muted-foreground">
+        Admins can change the server catalog. Viewers pick a world and their own layers.
+      </p>
 
       <form className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2" onSubmit={(event) => void create(event)}>
         <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase sm:col-span-2">
@@ -171,6 +160,6 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }

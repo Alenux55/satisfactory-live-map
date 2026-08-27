@@ -17,6 +17,7 @@ import { CATEGORY_COLORS } from "@/lib/world/categorize";
 import { RESOURCE_TYPE_LABELS } from "@/lib/world/resource";
 import { DEFAULT_LAYERS, type EntityCategory, type MapEntity } from "@/lib/world/types";
 import { iconCandidatesForResource } from "@/lib/world/icons";
+import { cn } from "@/lib/utils";
 
 type LayerFlags = Record<EntityCategory, boolean>;
 
@@ -77,12 +78,18 @@ export function LayersPanel({
     onLayers({ ...layers, [id]: on });
   };
 
-  const toggleType = (key: string, on: boolean, category: EntityCategory) => {
+  const setTypes = (keys: string[], on: boolean, category: EntityCategory) => {
     const next = new Set(hidden);
-    if (on) next.delete(key);
-    else next.add(key);
+    for (const key of keys) {
+      if (on) next.delete(key);
+      else next.add(key);
+    }
     onHiddenTypes([...next]);
     if (on && layers[category] === false) onLayers({ ...layers, [category]: true });
+  };
+
+  const toggleType = (key: string, on: boolean, category: EntityCategory) => {
+    setTypes([key], on, category);
   };
 
   const allOn = () => {
@@ -95,15 +102,30 @@ export function LayersPanel({
     onHiddenTypes([]);
   };
 
+  const groupOn = (rows: TypeRow[], category: EntityCategory) => {
+    const keys = rows.map((row) => row.key);
+    setTypes(keys, true, category);
+  };
+
+  const groupOff = (rows: TypeRow[], category: EntityCategory) => {
+    setTypes(
+      rows.map((row) => row.key),
+      false,
+      category,
+    );
+  };
+
+  const groupChecked = (rows: TypeRow[]) => rows.length > 0 && rows.every((row) => !hidden.has(row.key));
+
   return (
-    <ScrollArea className="h-full">
-      <div className="flex flex-col gap-3 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <p className="inline-flex items-center gap-1.5 text-sm font-medium">
-            <Layers className="size-3.5" />
+    <ScrollArea className="h-full min-h-0 w-full min-w-0 flex-1 overflow-x-hidden">
+      <div className="flex min-w-0 flex-col gap-3 px-3 py-4 pb-10">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <p className="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium">
+            <Layers className="size-3.5 shrink-0" />
             Layers
           </p>
-          <span className="flex gap-1">
+          <span className="flex shrink-0 gap-1">
             <Button size="xs" variant="ghost" onClick={allOn}>
               All on
             </Button>
@@ -121,28 +143,56 @@ export function LayersPanel({
           const expanded = openCats.has(cat.id);
           const subs = cat.subs.filter((sub) => rows.some((row) => row.sub === sub.id) || cat.id === "resource");
           return (
-            <div key={cat.id} className="rounded-lg border border-border/70 bg-card/40">
-              <div className="flex items-center gap-2 px-2 py-1.5">
-                <button
-                  type="button"
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
-                  onClick={() => {
-                    setOpenCats((current) => {
-                      const next = new Set(current);
-                      if (next.has(cat.id)) next.delete(cat.id);
-                      else next.add(cat.id);
-                      return next;
-                    });
-                  }}
-                >
-                  <span className="size-2.5 shrink-0 rounded-sm" style={{ background: CATEGORY_COLORS[cat.id] }} />
-                  <span className="truncate">{cat.label}</span>
-                  <span className="ml-auto font-mono text-[11px] text-muted-foreground">{count}</span>
-                </button>
-                <Switch checked={layers[cat.id] !== false} onCheckedChange={(on) => setCategory(cat.id, on)} />
+            <div key={cat.id} className="min-w-0 overflow-x-hidden rounded-lg border border-border/70 bg-card/40">
+              <div className="flex min-w-0 flex-col gap-1 px-2 py-1.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
+                    onClick={() => {
+                      setOpenCats((current) => {
+                        const next = new Set(current);
+                        if (next.has(cat.id)) next.delete(cat.id);
+                        else next.add(cat.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    <span className="size-2.5 shrink-0 rounded-sm" style={{ background: CATEGORY_COLORS[cat.id] }} />
+                    <span className="truncate">{cat.label}</span>
+                    <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">{count}</span>
+                  </button>
+                  <Switch
+                    size="sm"
+                    className="shrink-0"
+                    checked={layers[cat.id] !== false}
+                    onCheckedChange={(on) => setCategory(cat.id, on)}
+                  />
+                </div>
+                <div className="flex min-w-0 items-center justify-end gap-0.5">
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="h-5 px-1.5 text-[10px]"
+                    onClick={() => {
+                      setCategory(cat.id, true);
+                      groupOn(rows, cat.id);
+                    }}
+                  >
+                    All on
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="h-5 px-1.5 text-[10px]"
+                    onClick={() => groupOff(rows, cat.id)}
+                  >
+                    All off
+                  </Button>
+                </div>
               </div>
               {expanded ? (
-                <div className="flex flex-col gap-2 border-t border-border/60 px-2 py-2">
+                <div className="flex min-w-0 flex-col gap-2 border-t border-border/60 px-2 py-2">
                   {cat.id === "resource"
                     ? mergeResourceRows(rows).map((row) => (
                         <TypeToggle
@@ -157,11 +207,21 @@ export function LayersPanel({
                         const subRows = rows.filter((row) => row.sub === sub.id);
                         if (!subRows.length) return null;
                         return (
-                          <div key={sub.id}>
-                            <p className="mb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                              {sub.label}
-                            </p>
-                            <div className="flex flex-col gap-1">
+                          <div key={sub.id} className="min-w-0">
+                            <div className="mb-1 min-w-0">
+                              <p className="truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                                {sub.label}
+                              </p>
+                              <div className="flex min-w-0 justify-end">
+                                <GroupActions
+                                  checked={groupChecked(subRows)}
+                                  onChecked={(on) => (on ? groupOn(subRows, cat.id) : groupOff(subRows, cat.id))}
+                                  onAllOn={() => groupOn(subRows, cat.id)}
+                                  onAllOff={() => groupOff(subRows, cat.id)}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex min-w-0 flex-col gap-1">
                               {subRows.map((row) => (
                                 <TypeToggle
                                   key={row.key}
@@ -196,6 +256,30 @@ export function LayersPanel({
         })}
       </div>
     </ScrollArea>
+  );
+}
+
+function GroupActions({
+  checked,
+  onChecked,
+  onAllOn,
+  onAllOff,
+}: {
+  checked: boolean;
+  onChecked: (on: boolean) => void;
+  onAllOn: () => void;
+  onAllOff: () => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-0.5">
+      <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={onAllOn}>
+        All on
+      </Button>
+      <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={onAllOff}>
+        All off
+      </Button>
+      <Switch size="sm" className="shrink-0" checked={checked} onCheckedChange={onChecked} />
+    </div>
   );
 }
 
@@ -237,14 +321,14 @@ function TypeToggle({
 }) {
   return (
     <div
-      className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-muted/60"
+      className="flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 hover:bg-muted/60"
       onMouseEnter={() => onHover(row.key)}
       onMouseLeave={() => onHover(null)}
     >
       <WikiIcon candidates={row.icons} label={row.label} className="size-5 shrink-0" />
       <span className="min-w-0 flex-1 truncate text-[12px]">{row.label}</span>
-      <span className="font-mono text-[10px] text-muted-foreground">{row.count}</span>
-      <Switch checked={checked} onCheckedChange={onChecked} />
+      <span className={cn("shrink-0 font-mono text-[10px] text-muted-foreground")}>{row.count}</span>
+      <Switch size="sm" className="shrink-0" checked={checked} onCheckedChange={onChecked} />
     </div>
   );
 }

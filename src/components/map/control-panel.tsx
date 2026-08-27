@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderOpen, LogOut, Plus, Radio, RefreshCw, Server, Timer, Trash2, UnfoldVertical, Upload, Users } from "lucide-react";
+import { FolderOpen, LogOut, Plus, Radio, RefreshCw, Server, Settings, Timer, Trash2, UnfoldVertical, Upload, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,8 +34,7 @@ type Props = {
   zExtent: { min: number; max: number };
   zLower: number;
   zUpper: number;
-  onZLower: (value: number) => void;
-  onZUpper: (value: number) => void;
+  onZRange: (lower: number, upper: number) => void;
   onZReset: () => void;
   onServerId: (id: string) => void;
   onConfig: (patch: ConfigPatch) => Promise<void>;
@@ -54,8 +53,7 @@ export function ControlPanel({
   zExtent,
   zLower,
   zUpper,
-  onZLower,
-  onZUpper,
+  onZRange,
   onZReset,
   onServerId,
   onConfig,
@@ -91,8 +89,8 @@ export function ControlPanel({
   const live = status?.status === "ready" || status?.status === "waiting";
 
   return (
-    <ScrollArea className="h-full">
-      <div className="flex flex-col gap-5 p-4">
+    <ScrollArea className="h-full min-h-0 flex-1">
+      <div className="flex flex-col gap-5 px-5 py-4 pb-10">
         <div>
           <div className="flex items-center justify-between gap-2">
             <p className="font-heading text-[11px] tracking-[0.22em] text-primary uppercase">
@@ -109,17 +107,23 @@ export function ControlPanel({
             streams only what changed.
           </p>
           {account ? (
-            <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-border/70 bg-card/50 px-2 py-1.5">
+            <div className="mt-3 flex flex-col gap-2 rounded-md border border-border/70 bg-card/50 px-2 py-1.5">
               <p className="truncate text-[11px]">
                 <span className="text-foreground">{account.username}</span>{" "}
                 <span className="font-mono text-muted-foreground">{account.role}</span>
               </p>
-              <span className="flex shrink-0 gap-1">
+              <span className="flex flex-wrap gap-1">
                 {account.role === "admin" ? (
-                  <Button size="xs" variant="ghost" onClick={() => router.push("/admin/users")}>
-                    <Users />
-                    Accounts
-                  </Button>
+                  <>
+                    <Button size="xs" variant="ghost" onClick={() => router.push("/admin/settings")}>
+                      <Settings />
+                      Settings
+                    </Button>
+                    <Button size="xs" variant="ghost" onClick={() => router.push("/admin/users")}>
+                      <Users />
+                      Accounts
+                    </Button>
+                  </>
                 ) : null}
                 <Button size="xs" variant="ghost" onClick={() => void onLogout()}>
                   <LogOut />
@@ -378,30 +382,24 @@ export function ControlPanel({
         >
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
-            <span>Lower</span>
             <span className="text-foreground">{zLower.toFixed(0)} m</span>
-          </div>
-          <Slider
-            min={zExtent.min}
-            max={zExtent.max}
-            step={1}
-            value={[zLower]}
-            onValueChange={(value) => onZLower(value[0] ?? zLower)}
-          />
-          <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
-            <span>Upper</span>
             <span className="text-foreground">{zUpper.toFixed(0)} m</span>
           </div>
           <Slider
             min={zExtent.min}
             max={zExtent.max}
             step={1}
-            value={[zUpper]}
-            onValueChange={(value) => onZUpper(value[0] ?? zUpper)}
+            minStepsBetweenThumbs={0}
+            value={[zLower, zUpper]}
+            onValueChange={(value) => {
+              const lo = value[0] ?? zLower;
+              const hi = value[1] ?? zUpper;
+              onZRange(Math.min(lo, hi), Math.max(lo, hi));
+            }}
           />
           <p className="text-[11px] text-muted-foreground">
-            Hide buildings outside this Z range (sea level is 0). Same idea as SCIM&apos;s height bounds,
-            implemented here on your save data.
+            Hide buildings outside this Z range (sea level is 0). Drag the lower and upper handles; they
+            cannot cross. Same idea as SCIM&apos;s height bounds, implemented here on your save data.
           </p>
         </div>
         </Section>

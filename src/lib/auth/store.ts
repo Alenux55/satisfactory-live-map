@@ -4,6 +4,9 @@ import path from "node:path";
 import { DEFAULT_LAYERS, DEMO_SERVER_ID } from "@/lib/world/types";
 import { hashPassword, normalizeEmail, normalizeUsername } from "./password";
 import {
+  clampSidebarWidth,
+  DEFAULT_LEFT_WIDTH,
+  DEFAULT_RIGHT_WIDTH,
   defaultPrefs,
   MIN_PASSWORD_LENGTH,
   RESET_TTL_MS,
@@ -58,6 +61,8 @@ function coercePrefs(raw: unknown): UserPrefs {
     hiddenTypes: Array.isArray(rec.hiddenTypes)
       ? rec.hiddenTypes.filter((value): value is string => typeof value === "string")
       : [],
+    leftWidth: clampSidebarWidth(Number(rec.leftWidth), DEFAULT_LEFT_WIDTH),
+    rightWidth: clampSidebarWidth(Number(rec.rightWidth), DEFAULT_RIGHT_WIDTH),
   };
 }
 

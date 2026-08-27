@@ -10,9 +10,15 @@ const WIKI_FILE = "https://satisfactory.wiki.gg/wiki/Special:FilePath/";
 const inflight = new Map<string, Promise<Buffer | null>>();
 
 export function safeIconFile(raw: string): string | null {
-  const name = raw.trim().replace(/\\/g, "/").split("/").pop() ?? "";
-  if (!/^[A-Za-z0-9._-]+\.(png|jpg|jpeg|webp|svg)$/i.test(name)) return null;
-  return name;
+  let name = raw.trim().replace(/\\/g, "/").split("/").pop() ?? "";
+  try {
+    name = decodeURIComponent(name);
+  } catch {
+    // already decoded
+  }
+  const normalized = name.replace(/\s+/g, "_");
+  if (!/^[A-Za-z0-9._-]+\.(png|jpg|jpeg|webp|svg)$/i.test(normalized)) return null;
+  return normalized;
 }
 
 function cachePath(file: string): string {
