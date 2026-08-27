@@ -114,6 +114,33 @@ export type WorldDelta = {
   entityCount: number;
 };
 
+export type HistoryMark = {
+  t: number;
+  rev: number;
+  added: number;
+  updated: number;
+  removed: number;
+  entityCount: number;
+};
+
+export type HistoryEvent = {
+  t: number;
+  rev: number;
+  added: MapEntity[];
+  updated: MapEntity[];
+  removed: string[];
+  entityCount: number;
+  header?: SaveHeaderInfo | null;
+};
+
+export type HistoryMeta = {
+  firstT: number | null;
+  lastT: number | null;
+  eventCount: number;
+  keyframeCount: number;
+  bytes: number;
+};
+
 export type HubStatus = {
   rev: number;
   status: ParseStatus;

@@ -27,6 +27,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { attachEntityCanvas, type EntityCanvasHandle } from "@/components/map/entity-canvas";
 import { ControlPanel } from "@/components/map/control-panel";
 import { LayersPanel } from "@/components/map/layers-panel";
+import { HistoryTimeline } from "@/components/map/history-timeline";
 import { SidebarResizeHandle } from "@/components/map/sidebar-resize";
 import {
   clampSidebarWidth,
@@ -60,6 +61,8 @@ export function LiveMap() {
   const mapRef = useRef<LeafletMap | null>(null);
   const overlaysRef = useRef<{ schematic: ImageOverlay; terrain: ImageOverlay | null } | null>(null);
   const zTouchedRef = useRef(false);
+  const [historyLive, setHistoryLive] = useState(true);
+  const historyLiveRef = useRef(true);
 
   useEffect(() => {
     void (async () => {
@@ -87,6 +90,8 @@ export function LiveMap() {
     setServerId(id);
     setSelected(null);
     zTouchedRef.current = false;
+    historyLiveRef.current = true;
+    setHistoryLive(true);
   }, []);
 
   const [entityMap, setEntityMap] = useState(new Map<string, MapEntity>());
@@ -312,6 +317,7 @@ export function LiveMap() {
     });
     source.addEventListener("delta", (event) => {
       const delta = JSON.parse((event as MessageEvent).data) as WorldDelta;
+      if (!historyLiveRef.current) return;
       if (delta.fromRev !== revRef.current) {
         void loadSnapshot();
         return;
@@ -357,6 +363,24 @@ export function LiveMap() {
     await loadSnapshot();
     await loadConfig();
   };
+
+  const onHistorySeek = useCallback(
+    (entities: Map<string, MapEntity>) => {
+      historyLiveRef.current = false;
+      setHistoryLive(false);
+      pushEntities(entities);
+    },
+    [pushEntities],
+  );
+
+  const onHistoryLiveChange = useCallback(
+    (nextLive: boolean) => {
+      historyLiveRef.current = nextLive;
+      setHistoryLive(nextLive);
+      if (nextLive) void loadSnapshot();
+    },
+    [loadSnapshot],
+  );
 
   const logout = async () => {
     await fetch("/api/auth", {
@@ -447,9 +471,19 @@ export function LiveMap() {
               </Sheet>
             </div>
             <div className="rounded-md border border-border/70 bg-background/80 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
+              {historyLive ? "" : "Replay · "}
               {cursor ? `X ${cursor.x.toFixed(0)}  Y ${cursor.y.toFixed(0)}` : "MASSAGE-2(A-B)b"}
             </div>
           </div>
+        </div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2">
+          <HistoryTimeline
+            serverId={serverId}
+            live={historyLive}
+            liveRev={status?.rev ?? 0}
+            onLiveChange={onHistoryLiveChange}
+            onSeek={onHistorySeek}
+          />
         </div>
       </div>
       <aside

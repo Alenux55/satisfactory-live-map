@@ -3,6 +3,7 @@ import { watch, type FSWatcher } from "node:fs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { countCategories, diffWorld } from "./diff";
+import { persistHistory } from "./history";
 import { buildDemoWorld, DEMO_HEADER } from "./demo";
 import { parseSaveAsync } from "./parse-async";
 import { logger, memorySnapshot } from "@/lib/log";
@@ -499,6 +500,20 @@ export class WorldHub {
       entityCount: this.entities.size,
     };
     this.emit("delta", payload);
+    if (this.entry.kind !== "demo") {
+      persistHistory({
+        serverId: this.entry.id,
+        t: this.lastChangeAt ?? Date.now(),
+        rev: this.rev,
+        fromRev,
+        added: diff.added,
+        updated: diff.updated,
+        removed: diff.removed,
+        entities: list,
+        header,
+        entityCount: this.entities.size,
+      });
+    }
   }
 
   private async resolveSaveFile(): Promise<string | null> {

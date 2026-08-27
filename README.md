@@ -11,6 +11,7 @@ This is **not** a copy of [Satisfactory Calculator / SCIM](https://satisfactory-
 - Configurable poll interval (5s–10m)
 - Skips unchanged saves by size, mtime, then SHA-256
 - After the first snapshot, the UI applies added / updated / removed actors only
+- Records a **change-only history** (diffs + daily keyframes) so you can scrub a UniFi-style timeline and play a timelapse
 - Ships with a **Grass Fields demo factory** that grows on the same interval so you can see live deltas without a save
 - Background: 1.0 in-game map from the [official wiki Map.jpg](https://satisfactory.wiki.gg/wiki/File:Map.jpg) (cached to `data/world-map.jpg`, not committed). Schematic biome grid if the download fails. Not SCIM tiles.
 
@@ -23,6 +24,19 @@ A Satisfactory save is a **single compressed blob**. There is no public way to p
 3. **Diff actors by instance id** — send kilobytes to the browser, not the whole save
 
 That is what “live” means here: the dedicated server writes a new `.sav`, this process notices on the next tick, and the map updates without a full reload in the client.
+
+## Timeline and storage
+
+History is **not** a copy of every autosave. Unchanged polls are skipped. When the world actually changes, the sidecar appends a JSON delta and occasionally writes a full keyframe (`data/history/<server-id>/`, gitignored).
+
+For a late-game factory (~100k buildings) that autosaves every 5 minutes while you are building:
+
+- A typical change event is tens to a few hundred KB
+- A daily keyframe is the one large file (often a few MB to tens of MB uncompressed)
+- Idle overnight adds nothing
+- Active play is commonly **well under 1 GB/year**; a year of constant 5-minute churn might reach a few GB
+
+That is far cheaper than storing a full snapshot every poll. History starts at the first recorded change after this feature is running — it cannot invent sessions from before the sidecar was watching.
 
 Idle is cheap (stat + maybe a hash). On autosave expect a CPU spike for a few seconds and a RAM spike of about **0.5–2 GB** during parse, then GC. Keep ~2 GB free next to the dedicated server process.
 

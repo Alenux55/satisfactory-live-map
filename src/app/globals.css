@@ -134,6 +134,10 @@
   font-family: inherit;
 }
 
+.leaflet-bottom {
+  bottom: 6.25rem;
+}
+
 .satisfactory-entity-canvas {
   position: absolute;
   left: 0;
