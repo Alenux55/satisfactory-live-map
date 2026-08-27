@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils";
 
 const MIN_SPAN = 15 * 60 * 1000;
 const MAX_SPAN = 14 * 24 * 60 * 60 * 1000;
+const MIN_TRACK_H = 48;
+const MAX_TRACK_H = 240;
+const DEFAULT_TRACK_H = 88;
 const SPEEDS = [
   { id: "event", label: "Change", event: true, msPerSec: 0 },
   { id: "5m", label: "5m/s", event: false, msPerSec: 5 * 60 * 1000 },
@@ -23,23 +26,28 @@ type Props = {
   liveRev: number;
   onLiveChange: (live: boolean) => void;
   onSeek: (entities: Map<string, MapEntity>, at: number) => void;
+  onHeight?: (height: number) => void;
 };
 
-export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek }: Props) {
+export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek, onHeight }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dragRef = useRef<{ x: number; start: number; moved: boolean } | null>(null);
+  const dragRef = useRef<{ x: number; startHead: number; moved: boolean } | null>(null);
   const playRef = useRef({ playing: false, speed: 0, event: false, head: 0 });
+  const headRef = useRef(Date.now());
   const [meta, setMeta] = useState<HistoryMeta | null>(null);
   const [marks, setMarks] = useState<HistoryMark[]>([]);
   const [span, setSpan] = useState(24 * 60 * 60 * 1000);
-  const [viewEnd, setViewEnd] = useState(Date.now());
   const [head, setHead] = useState(Date.now());
+  const [trackH, setTrackH] = useState(DEFAULT_TRACK_H);
   const [playing, setPlaying] = useState(false);
   const [speedId, setSpeedId] = useState<(typeof SPEEDS)[number]["id"]>("30m");
   const [busy, setBusy] = useState(false);
 
-  const viewStart = viewEnd - span;
+  const viewStart = head - span / 2;
+  const viewEnd = head + span / 2;
   const speed = SPEEDS.find((item) => item.id === speedId) ?? SPEEDS[2];
+  headRef.current = head;
 
   const loadMeta = useCallback(async () => {
     const response = await fetch(`/api/history?server=${encodeURIComponent(serverId)}&view=meta`, {
@@ -48,10 +56,7 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
     if (!response.ok) return;
     const body = (await response.json()) as HistoryMeta;
     setMeta(body);
-    if (body.lastT && live) {
-      setHead(body.lastT);
-      setViewEnd((end) => (end < body.lastT! ? body.lastT! : end));
-    }
+    if (body.lastT && live) setHead(body.lastT);
   }, [live, liveRev, serverId]);
 
   const loadMarks = useCallback(async () => {
@@ -70,8 +75,21 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
   }, [loadMeta]);
 
   useEffect(() => {
-    void loadMarks();
+    const id = window.setTimeout(() => {
+      void loadMarks();
+    }, 120);
+    return () => window.clearTimeout(id);
   }, [loadMarks]);
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !onHeight) return;
+    const report = () => onHeight(el.getBoundingClientRect().height);
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [onHeight, trackH]);
 
   const seekTo = useCallback(
     async (at: number, stayLive = false) => {
@@ -228,10 +246,10 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
       ctx.fillStyle = "rgba(244, 195, 125, 0.85)";
       ctx.fillRect(x - 1.5, height - h - 2, 3, h);
     }
-    const hx = ((head - viewStart) / span) * width;
+    const hx = width / 2;
     ctx.fillStyle = "#fb7185";
     ctx.fillRect(hx - 1, 0, 2, height);
-  }, [head, marks, span, viewEnd, viewStart]);
+  }, [head, marks, span, trackH, viewEnd, viewStart]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -239,23 +257,29 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
     const onWheelNative = (event: WheelEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      const rect = canvas.getBoundingClientRect();
-      const ratio = (event.clientX - rect.left) / Math.max(1, rect.width);
-      const pivot = viewStart + ratio * span;
       const nextSpan = clamp(span * (event.deltaY > 0 ? 1.2 : 0.8), MIN_SPAN, MAX_SPAN);
-      const nextStart = pivot - ratio * nextSpan;
       setSpan(nextSpan);
-      setViewEnd(nextStart + nextSpan);
     };
     canvas.addEventListener("wheel", onWheelNative, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheelNative);
-  }, [span, viewStart]);
+  }, [span]);
+
+  const clampHead = useCallback(
+    (at: number) => {
+      if (!meta?.firstT || !meta.lastT) return at;
+      return Math.min(Math.max(at, meta.firstT), meta.lastT);
+    },
+    [meta],
+  );
 
   const dateValue = useMemo(() => new Date(head).toISOString().slice(0, 10), [head]);
   const empty = !meta?.firstT;
 
   return (
-    <div className="pointer-events-auto w-full rounded-t-lg border border-border/70 bg-background/95 px-2 py-1.5 shadow-lg backdrop-blur">
+    <div
+      ref={rootRef}
+      className="pointer-events-auto w-full rounded-t-lg border border-border/70 bg-background/95 px-2 py-1.5 shadow-lg backdrop-blur"
+    >
       <div className="mb-1 flex min-w-0 flex-wrap items-center gap-1.5">
         <Button
           size="xs"
@@ -281,7 +305,6 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
               const next = Date.parse(`${event.target.value}T12:00:00`);
               if (!Number.isFinite(next)) return;
               setSpan(24 * 60 * 60 * 1000);
-              setViewEnd(next + 12 * 60 * 60 * 1000);
               void seekTo(next);
             }}
           />
@@ -290,7 +313,7 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
           size="icon-xs"
           variant="ghost"
           onClick={() => {
-            setViewEnd((end) => end - span * 0.6);
+            void seekTo(clampHead(head - span * 0.6));
           }}
         >
           <ChevronLeft />
@@ -299,7 +322,7 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
           size="icon-xs"
           variant="ghost"
           onClick={() => {
-            setViewEnd((end) => end + span * 0.6);
+            void seekTo(clampHead(head + span * 0.6));
           }}
         >
           <ChevronRight />
@@ -347,11 +370,40 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
           Now
         </Button>
       </div>
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize timeline"
+        tabIndex={0}
+        className="mb-1 flex h-2 cursor-ns-resize touch-none items-center justify-center"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          const target = event.currentTarget;
+          let lastY = event.clientY;
+          target.setPointerCapture(event.pointerId);
+          const move = (next: PointerEvent) => {
+            const delta = next.clientY - lastY;
+            lastY = next.clientY;
+            setTrackH((height) => clamp(height - delta, MIN_TRACK_H, MAX_TRACK_H));
+          };
+          const up = () => {
+            target.releasePointerCapture(event.pointerId);
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+          };
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up);
+        }}
+      >
+        <span className="h-0.5 w-10 rounded-full bg-border" />
+      </div>
       <canvas
         ref={canvasRef}
-        className={cn("h-8 w-full cursor-ew-resize rounded-md border border-border/60", empty && "opacity-50")}
+        style={{ height: trackH }}
+        className={cn("w-full cursor-ew-resize rounded-md border border-border/60", empty && "opacity-50")}
         onPointerDown={(event) => {
-          dragRef.current = { x: event.clientX, start: viewStart, moved: false };
+          setPlaying(false);
+          dragRef.current = { x: event.clientX, startHead: head, moved: false };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
@@ -359,15 +411,16 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
           const rect = event.currentTarget.getBoundingClientRect();
           if (Math.abs(event.clientX - dragRef.current.x) >= 4) {
             dragRef.current.moved = true;
-            const dx = event.clientX - dragRef.current.x;
-            const dt = -(dx / Math.max(1, rect.width)) * span;
-            setViewEnd(dragRef.current.start + span + dt);
+            const dt = -((event.clientX - dragRef.current.x) / Math.max(1, rect.width)) * span;
+            setHead(clampHead(dragRef.current.startHead + dt));
           }
         }}
         onPointerUp={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
           if (dragRef.current && !dragRef.current.moved) {
             void seekTo(timeForX(event.clientX - rect.left, rect.width));
+          } else if (dragRef.current?.moved) {
+            void seekTo(headRef.current);
           }
           dragRef.current = null;
         }}
@@ -375,7 +428,7 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
       <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
         {empty
           ? "History starts on the next save change for this server. Demo worlds are not recorded."
-          : `Scroll to zoom · drag to pan · ${meta.eventCount} changes · ${formatBytes(meta.bytes)}`}
+          : `Scroll to zoom · drag to pan (playhead stays centered) · drag the bar to resize · ${meta.eventCount} changes · ${formatBytes(meta.bytes)}`}
       </p>
     </div>
   );

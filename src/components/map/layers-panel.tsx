@@ -8,9 +8,11 @@ import { Switch } from "@/components/ui/switch";
 import { WikiIcon } from "@/components/map/wiki-icon";
 import {
   BUILDER_MENU,
+  categoryHighlightKey,
   layerIcons,
   layerKey,
   layerLabel,
+  subcategoryHighlightKey,
   subcategoryId,
 } from "@/lib/world/builder-menu";
 import { CATEGORY_COLORS } from "@/lib/world/categorize";
@@ -168,8 +170,13 @@ export function LayersPanel({
           const expanded = openCats.has(cat.id);
           const subs = cat.subs.filter((sub) => rows.some((row) => row.sub === sub.id) || cat.id === "resource");
           return (
-            <div key={cat.id} className="min-w-0 overflow-x-hidden rounded-lg border border-border/70 bg-card/40">
-              <div className="flex min-w-0 flex-col gap-1 px-2 py-1.5">
+            <div
+              key={cat.id}
+              className="min-w-0 overflow-x-hidden rounded-lg border border-border/70 bg-card/40"
+              onMouseEnter={() => onHover(categoryHighlightKey(cat.id))}
+              onMouseLeave={() => onHover(null)}
+            >
+              <div className="flex min-w-0 flex-col gap-1 rounded-md px-2 py-1.5 hover:bg-muted/40">
                 <div className="flex min-w-0 items-center gap-2">
                   <button
                     type="button"
@@ -230,6 +237,7 @@ export function LayersPanel({
                           onHidden={(next) => onHiddenTypes(next)}
                           onChecked={(on) => toggleType(row.key, on, cat.id)}
                           onHover={onHover}
+                          hoverLeaveKey={categoryHighlightKey(cat.id)}
                         />
                       ))
                     : (subs.length ? subs : cat.subs).map((sub) => {
@@ -237,8 +245,13 @@ export function LayersPanel({
                         const subRows = source.filter((row) => row.sub === sub.id);
                         if (!subRows.length) return null;
                         return (
-                          <div key={sub.id} className="min-w-0">
-                              <div className="mb-1 flex min-w-0 items-center gap-2">
+                          <div
+                            key={sub.id}
+                            className="min-w-0"
+                            onMouseEnter={() => onHover(subcategoryHighlightKey(cat.id, sub.id))}
+                            onMouseLeave={() => onHover(categoryHighlightKey(cat.id))}
+                          >
+                            <div className="mb-1 flex min-w-0 items-center gap-2 rounded-md hover:bg-muted/40">
                               <p className="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                                 {sub.label}
                               </p>
@@ -280,6 +293,7 @@ export function LayersPanel({
                                   checked={!hidden.has(row.key)}
                                   onChecked={(on) => toggleType(row.key, on, cat.id)}
                                   onHover={onHover}
+                                  hoverLeaveKey={subcategoryHighlightKey(cat.id, sub.id)}
                                 />
                               ))}
                             </div>
@@ -294,6 +308,7 @@ export function LayersPanel({
                           checked={!hidden.has(row.key)}
                           onChecked={(on) => toggleType(row.key, on, cat.id)}
                           onHover={onHover}
+                          hoverLeaveKey={categoryHighlightKey(cat.id)}
                         />
                       ))
                     : null}
@@ -360,17 +375,19 @@ function TypeToggle({
   checked,
   onChecked,
   onHover,
+  hoverLeaveKey,
 }: {
   row: TypeRow;
   checked: boolean;
   onChecked: (on: boolean) => void;
   onHover: (key: string | null) => void;
+  hoverLeaveKey: string | null;
 }) {
   return (
     <div
       className="flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 hover:bg-muted/60"
       onMouseEnter={() => onHover(row.key)}
-      onMouseLeave={() => onHover(null)}
+      onMouseLeave={() => onHover(hoverLeaveKey)}
     >
       {row.color ? (
         <span className="size-5 shrink-0 rounded-sm border border-border/70" style={{ background: row.color }} />
@@ -390,12 +407,14 @@ function ResourceToggle({
   onHidden,
   onChecked,
   onHover,
+  hoverLeaveKey,
 }: {
   row: TypeRow;
   hidden: Set<string>;
   onHidden: (hidden: string[]) => void;
   onChecked: (on: boolean) => void;
   onHover: (key: string | null) => void;
+  hoverLeaveKey: string | null;
 }) {
   const claimedKey = `${row.key}:claimed`;
   const unclaimedKey = `${row.key}:unclaimed`;
@@ -414,13 +433,13 @@ function ResourceToggle({
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 rounded-md px-1 py-0.5 hover:bg-muted/60">
+    <div
+      className="flex min-w-0 flex-col gap-0.5 rounded-md px-1 py-0.5 hover:bg-muted/60"
+      onMouseEnter={() => onHover(row.key)}
+      onMouseLeave={() => onHover(hoverLeaveKey)}
+    >
       <div className="flex min-w-0 items-center gap-2">
-        <span
-          className="flex min-w-0 flex-1 items-center gap-2"
-          onMouseEnter={() => onHover(row.key)}
-          onMouseLeave={() => onHover(null)}
-        >
+        <span className="flex min-w-0 flex-1 items-center gap-2">
           <WikiIcon candidates={row.icons} label={row.label} className="size-5 shrink-0" />
           <span className="min-w-0 flex-1 truncate text-[12px]">{row.label}</span>
         </span>
@@ -435,7 +454,7 @@ function ResourceToggle({
             mode === "claimed" ? "bg-primary/20 text-foreground" : "text-muted-foreground hover:bg-muted",
           )}
           onMouseEnter={() => onHover(claimedKey)}
-          onMouseLeave={() => onHover(null)}
+          onMouseLeave={() => onHover(row.key)}
           onClick={() => setMode(mode === "claimed" ? "all" : "claimed")}
         >
           claimed {row.claimed ?? 0}
@@ -447,7 +466,7 @@ function ResourceToggle({
             mode === "unclaimed" ? "bg-primary/20 text-foreground" : "text-muted-foreground hover:bg-muted",
           )}
           onMouseEnter={() => onHover(unclaimedKey)}
-          onMouseLeave={() => onHover(null)}
+          onMouseLeave={() => onHover(row.key)}
           onClick={() => setMode(mode === "unclaimed" ? "all" : "unclaimed")}
         >
           open {row.unclaimed ?? 0}

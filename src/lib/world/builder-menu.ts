@@ -305,3 +305,25 @@ export function subcategoryId(entity: MapEntity): string {
   const match = cat?.subs.find((sub) => sub.test(path, short));
   return match?.id ?? cat?.subs[0]?.id ?? "other";
 }
+
+export function categoryHighlightKey(category: EntityCategory): string {
+  return `cat:${category}`;
+}
+
+export function subcategoryHighlightKey(category: EntityCategory, subId: string): string {
+  return `sub:${category}:${subId}`;
+}
+
+export function matchesLayerHighlight(entity: MapEntity, highlight: string): boolean {
+  if (highlight.startsWith("cat:")) return entity.category === highlight.slice(4);
+  if (highlight.startsWith("sub:")) {
+    return `${entity.category}:${subcategoryId(entity)}` === highlight.slice(4);
+  }
+  const key = layerKey(entity);
+  if (key === highlight) return true;
+  if (entity.category === "resource") {
+    const claimKey = entity.claimed ? `${key}:claimed` : `${key}:unclaimed`;
+    return claimKey === highlight;
+  }
+  return false;
+}

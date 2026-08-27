@@ -3,7 +3,7 @@ import type { EntityCategory, MapEntity } from "@/lib/world/types";
 import { CATEGORY_COLORS } from "@/lib/world/categorize";
 import { worldToLatLng } from "@/lib/world/coords";
 import { PURITY_COLORS } from "@/lib/world/resource";
-import { layerIcons, layerKey, subcategoryId } from "@/lib/world/builder-menu";
+import { layerIcons, layerKey, matchesLayerHighlight, subcategoryId } from "@/lib/world/builder-menu";
 import { iconSrc } from "@/lib/world/icons";
 import { pioneerColor } from "@/lib/world/pioneer-color";
 
@@ -109,11 +109,7 @@ export function attachEntityCanvas(
     }
 
     for (const entity of [...rest, ...resources, ...players]) {
-      const key = layerKey(entity);
-      const claimKey =
-        entity.category === "resource" ? (entity.claimed ? `${key}:claimed` : `${key}:unclaimed`) : null;
-      const isHi =
-        highlight != null && (key === highlight || (claimKey != null && claimKey === highlight));
+      const isHi = highlight != null && matchesLayerHighlight(entity, highlight);
       if (highlight && !isHi) ctx.globalAlpha = 0.18;
       else ctx.globalAlpha = 1;
 

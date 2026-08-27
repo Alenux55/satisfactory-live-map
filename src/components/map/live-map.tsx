@@ -59,6 +59,7 @@ export function LiveMap() {
   const [terrainReady, setTerrainReady] = useState(false);
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
+  const [timelineOffset, setTimelineOffset] = useState(116);
   const mapRef = useRef<LeafletMap | null>(null);
   const overlaysRef = useRef<{ schematic: ImageOverlay; terrain: ImageOverlay | null } | null>(null);
   const zTouchedRef = useRef(false);
@@ -441,7 +442,10 @@ export function LiveMap() {
         {panel}
         <SidebarResizeHandle edge="left" onDelta={resizeLeft} />
       </aside>
-      <div className="relative h-full min-h-0 min-w-0 flex-1">
+      <div
+        className="relative h-full min-h-0 min-w-0 flex-1"
+        style={{ ["--leaflet-bottom-offset" as string]: `${timelineOffset + 8}px` }}
+      >
         <div ref={containerRef} className="relative z-0 h-full w-full isolate bg-[#0c1c2c]" />
         <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3">
           <div className="pointer-events-auto md:hidden">
@@ -497,6 +501,7 @@ export function LiveMap() {
             liveRev={status?.rev ?? 0}
             onLiveChange={onHistoryLiveChange}
             onSeek={onHistorySeek}
+            onHeight={setTimelineOffset}
           />
         </div>
       </div>
