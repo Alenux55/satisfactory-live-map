@@ -1,15 +1,22 @@
 import {
   Parser,
+  isSaveComponent,
   isSaveEntity,
   type SatisfactorySave,
+  type SaveComponent,
   type SaveEntity,
 } from "@etothepii/satisfactory-file-parser";
 import { categorize, footprintFor, prettyType, shortType } from "./categorize";
 import { cmToMeters, yawFromQuaternion } from "./coords";
+import { logger } from "@/lib/log";
 import { parsePurity, resourceKind, RESOURCE_TYPE_LABELS } from "./resource";
+import { applyVanillaNodeCatalog } from "./vanilla-nodes";
 import type { MapEntity, Point, SaveHeaderInfo } from "./types";
 
+type SaveObjectLike = SaveEntity | SaveComponent;
+
 const NODE_CLAIM_RADIUS_M = 28;
+let unknownNodeSamples = 0;
 
 const INCLUDE =
   /Buildable|Char_Player|Vehicle|Explorer|Tractor|Truck|CyberWagon|FactoryCart|ConveyorChain|LightweightBuildable|PipeHyper|JumpPad|Locomotive|FreightWagon|GolfCart|GolfCart/i;
@@ -45,7 +52,7 @@ function readQuat(value: unknown): { x: number; y: number; z: number; w: number 
   return undefined;
 }
 
-function propValue(entity: SaveEntity, name: string): unknown {
+function propValue(entity: SaveObjectLike, name: string): unknown {
   const raw = entity.properties?.[name];
   const one = Array.isArray(raw) ? raw[0] : raw;
   const rec = asRecord(one);
@@ -62,6 +69,38 @@ function pathNameOf(value: unknown): string | undefined {
   return pathNameOf(rec.value);
 }
 
+function harvestStrings(value: unknown, into: string[], depth = 0): void {
+  if (depth > 5 || into.length > 48 || value == null) return;
+  if (typeof value === "string") {
+    if (value.length > 0 && value.length < 400) into.push(value);
+    return;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return;
+  if (Array.isArray(value)) {
+    for (const item of value) harvestStrings(item, into, depth + 1);
+    return;
+  }
+  const rec = asRecord(value);
+  if (!rec) return;
+  if (typeof rec.pathName === "string") into.push(rec.pathName);
+  if (typeof rec.name === "string") into.push(rec.name);
+  for (const nested of Object.values(rec)) harvestStrings(nested, into, depth + 1);
+}
+
+function resourceFromBlob(typePath: string, ...blobs: unknown[]): string {
+  const strings: string[] = [];
+  harvestStrings(blobs, strings);
+  return resourceKind(strings.join(" "), typePath);
+}
+
+function arrayValues(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  const rec = asRecord(raw);
+  if (Array.isArray(rec?.values)) return rec.values as unknown[];
+  if (Array.isArray(asRecord(rec?.value)?.values)) return asRecord(rec?.value)!.values as unknown[];
+  return [];
+}
+
 function recipeFrom(entity: SaveEntity): string | undefined {
   const path = pathNameOf(propValue(entity, "mCurrentRecipe"));
   if (!path) return undefined;
@@ -74,6 +113,99 @@ function playerName(entity: SaveEntity): string | undefined {
   const rec = asRecord(cached);
   if (typeof rec?.value === "string") return rec.value;
   return undefined;
+}
+
+function floatProp(entity: SaveEntity, name: string): number | undefined {
+  const value = propValue(entity, name);
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const rec = asRecord(value);
+  if (typeof rec?.value === "number" && Number.isFinite(rec.value)) return rec.value;
+  return undefined;
+}
+
+function countMatchingItems(stacks: unknown, match: RegExp): number {
+  let total = 0;
+  for (const stack of arrayValues(stacks)) {
+    const bag = asRecord(stack);
+    const props = asRecord(bag?.properties) ?? bag;
+    if (!props) continue;
+    const item = pathNameOf(props.Item) ?? pathNameOf(asRecord(props.Item)?.itemReference) ?? "";
+    const amount = num(asRecord(props.NumItems)?.value ?? props.NumItems, 0);
+    if (match.test(item)) total += amount;
+  }
+  return total;
+}
+
+function inventoryFromRef(byName: Map<string, SaveObjectLike>, ref: unknown): SaveComponent | null {
+  const path = pathNameOf(ref);
+  if (!path) return null;
+  const obj = byName.get(path);
+  if (!obj || !isSaveComponent(obj)) return null;
+  return obj;
+}
+
+function inventoryFromComponents(obj: SaveEntity, byName: Map<string, SaveObjectLike>, match: RegExp): SaveComponent | null {
+  for (const ref of obj.components ?? []) {
+    const path = typeof ref === "string" ? ref : pathNameOf(ref);
+    if (!path || !match.test(path)) continue;
+    const found = byName.get(path);
+    if (found && isSaveComponent(found)) return found;
+  }
+  return null;
+}
+
+function factoryExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Partial<MapEntity> {
+  const extras: Partial<MapEntity> = {};
+  const potential = floatProp(obj, "mCurrentPotential") ?? floatProp(obj, "mPendingPotential");
+  const boost = floatProp(obj, "mCurrentProductionBoost");
+  const shardInv =
+    inventoryFromRef(byName, propValue(obj, "mInventoryPotential")) ??
+    inventoryFromComponents(obj, byName, /InventoryPotential|PotentialInventory/i);
+  if (shardInv) {
+    const shards = countMatchingItems(
+      propValue(shardInv, "mInventoryStacks") ?? shardInv.properties?.mInventoryStacks,
+      /CrystalShard|PowerShard|Desc_Crystal/i,
+    );
+    if (shards > 0) extras.powerShards = shards;
+  }
+  if (typeof potential === "number") {
+    extras.clock = Math.round(potential * 1000) / 10;
+  }
+  if (typeof boost === "number" && boost > 1.01) {
+    extras.somersloops = Math.max(1, Math.round(Math.log2(boost)));
+  } else {
+    const sloopInv =
+      inventoryFromRef(byName, propValue(obj, "mInventoryProductionBoost")) ??
+      inventoryFromComponents(obj, byName, /InventoryProductionBoost|ProductionBoost/i);
+    if (sloopInv) {
+      const sloops = countMatchingItems(
+        propValue(sloopInv, "mInventoryStacks") ?? sloopInv.properties?.mInventoryStacks,
+        /Somersloop|WAT1|Desc_WAT1|Desc_Somersloop/i,
+      );
+      if (sloops > 0) extras.somersloops = sloops;
+    }
+  }
+  const clockFactor = (extras.clock ?? 100) / 100;
+  const sloopFactor = extras.somersloops ? 2 ** extras.somersloops : typeof boost === "number" ? boost : 1;
+  if (extras.clock != null || extras.somersloops != null || extras.powerShards != null) {
+    extras.production = Math.round(clockFactor * sloopFactor * 1000) / 10;
+  }
+  const extracted = resourceFromBlob(
+    obj.typePath,
+    propValue(obj, "mExtractResourceType"),
+    propValue(obj, "mWhatToExtract"),
+    propValue(obj, "mResourceClass"),
+    obj.properties,
+  );
+  if (extracted !== "unknown") extras.resource = extracted;
+  else {
+    const recipe = recipeFrom(obj);
+    if (recipe) {
+      const fromRecipe = resourceKind(recipe);
+      if (fromRecipe !== "unknown") extras.resource = fromRecipe;
+    }
+  }
+  return extras;
 }
 
 function downsample(points: Point[], max = 16): Point[] {
@@ -165,23 +297,38 @@ function fromTransform(
   };
 }
 
-function extractResourceNode(obj: SaveEntity): MapEntity | null {
+function extractResourceNode(obj: SaveEntity, byName: Map<string, SaveObjectLike>): MapEntity | null {
   const translation = obj.transform?.translation;
   if (!translation) return null;
   const typePath = obj.typePath || "";
-  const resourcePath =
-    pathNameOf(propValue(obj, "mResourceClass")) ??
-    pathNameOf(propValue(obj, "mWhatToExtract")) ??
-    pathNameOf(propValue(obj, "mExtractResourceType")) ??
-    pathNameOf(propValue(obj, "Resource")) ??
-    typePath;
-  const kind = resourceKind(resourcePath, typePath);
+  const componentBlobs = (obj.components ?? []).map((ref) => byName.get(ref.pathName)?.properties);
+  const kind = resourceFromBlob(
+    typePath,
+    obj.instanceName,
+    obj.properties,
+    propValue(obj, "mResourceClass"),
+    propValue(obj, "mWhatToExtract"),
+    propValue(obj, "mExtractResourceType"),
+    propValue(obj, "Resource"),
+    ...componentBlobs,
+  );
+  if (kind === "unknown") {
+    unknownNodeSamples += 1;
+    if (unknownNodeSamples <= 8) {
+      logger.debug("resource node unclassified", {
+        typePath,
+        instance: obj.instanceName,
+        props: Object.keys(obj.properties ?? {}),
+      });
+    }
+  }
   const pretty = RESOURCE_TYPE_LABELS[kind] ?? kind;
   const purity = parsePurity(
     propValue(obj, "mPurity") ??
       propValue(obj, "Purity") ??
       propValue(obj, "mNodePurity") ??
-      propValue(obj, "mSavedPurity"),
+      propValue(obj, "mSavedPurity") ??
+      obj.properties,
   );
   const occupied = boolish(propValue(obj, "mIsOccupied") ?? propValue(obj, "mOccupied"));
   const purityLabel = purity.charAt(0).toUpperCase() + purity.slice(1);
@@ -204,14 +351,20 @@ function extractResourceNode(obj: SaveEntity): MapEntity | null {
 }
 
 function markNodesClaimed(entities: MapEntity[]): void {
-  const extractors = entities.filter((entity) => entity.category === "extraction");
+  const extractors = entities.filter((entity) => /Miner|OilPump|WaterPump|ResourceWell|Fracking|Geothermal/i.test(entity.type));
   for (const node of entities) {
-    if (node.category !== "resource" || node.claimed) continue;
+    if (node.category !== "resource") continue;
     for (const extractor of extractors) {
-      if (Math.hypot(extractor.x - node.x, extractor.y - node.y) <= NODE_CLAIM_RADIUS_M) {
-        node.claimed = true;
-        break;
+      if (Math.hypot(extractor.x - node.x, extractor.y - node.y) > NODE_CLAIM_RADIUS_M) continue;
+      node.claimed = true;
+      if ((node.resource === "unknown" || !node.resource) && extractor.resource && extractor.resource !== "unknown") {
+        node.resource = extractor.resource;
+        const pretty = RESOURCE_TYPE_LABELS[extractor.resource] ?? extractor.resource;
+        const purityLabel = (node.purity ?? "normal").replace(/^\w/, (ch) => ch.toUpperCase());
+        node.type = pretty;
+        node.label = `${pretty} · ${purityLabel}`;
       }
+      break;
     }
   }
 }
@@ -307,6 +460,14 @@ export function headerFromSave(save: SatisfactorySave): SaveHeaderInfo {
 export function extractEntities(save: SatisfactorySave): MapEntity[] {
   const entities: MapEntity[] = [];
   const seen = new Set<string>();
+  const byName = new Map<string, SaveObjectLike>();
+  unknownNodeSamples = 0;
+
+  for (const level of Object.values(save.levels ?? {})) {
+    for (const obj of level.objects ?? []) {
+      if (obj.instanceName) byName.set(obj.instanceName, obj as SaveObjectLike);
+    }
+  }
 
   for (const level of Object.values(save.levels ?? {})) {
     for (const obj of level.objects ?? []) {
@@ -319,7 +480,7 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
         extractConveyorChain(obj, entities);
         extractPowerLine(obj, entities);
         if (isResourceNodeActor(obj.typePath)) {
-          const node = extractResourceNode(obj);
+          const node = extractResourceNode(obj, byName);
           if (node) {
             if (seen.has(node.id)) continue;
             seen.add(node.id);
@@ -331,7 +492,7 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
         if (/ConveyorChainActor|LightweightBuildable/i.test(obj.typePath)) continue;
         const translation = obj.transform?.translation;
         if (!translation) continue;
-        const extras: Partial<Pick<MapEntity, "recipe" | "label" | "path">> = {};
+        const extras: Partial<MapEntity> = { ...factoryExtras(obj, byName) };
         const recipe = recipeFrom(obj);
         if (recipe) extras.recipe = recipe;
         const name = playerName(obj);
@@ -350,6 +511,7 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
   }
 
   markNodesClaimed(entities);
+  applyVanillaNodeCatalog(entities);
   return entities;
 }
 

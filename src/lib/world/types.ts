@@ -26,16 +26,17 @@ export type ConfigPatch = {
 };
 
 export type EntityCategory =
-  | "production"
-  | "extraction"
-  | "logistics"
-  | "power"
-  | "organization"
-  | "transport"
   | "special"
-  | "player"
-  | "vehicle"
+  | "production"
+  | "power"
+  | "logistics"
+  | "organization"
+  | "foundations"
+  | "walls"
+  | "architecture"
+  | "transport"
   | "resource"
+  | "player"
   | "other";
 
 export type Point = [number, number];
@@ -56,6 +57,10 @@ export type MapEntity = {
   purity?: "impure" | "normal" | "pure";
   claimed?: boolean;
   resource?: string;
+  clock?: number;
+  powerShards?: number;
+  somersloops?: number;
+  production?: number;
 };
 
 export type SaveHeaderInfo = {
@@ -143,43 +148,46 @@ export type HubConfig = {
 };
 
 export const EMPTY_COUNTS: CategoryCounts = {
-  production: 0,
-  extraction: 0,
-  logistics: 0,
-  power: 0,
-  organization: 0,
-  transport: 0,
   special: 0,
-  player: 0,
-  vehicle: 0,
+  production: 0,
+  power: 0,
+  logistics: 0,
+  organization: 0,
+  foundations: 0,
+  walls: 0,
+  architecture: 0,
+  transport: 0,
   resource: 0,
+  player: 0,
   other: 0,
 };
 
 export const CATEGORY_LABELS: Record<EntityCategory, string> = {
+  special: "Special",
   production: "Production",
-  extraction: "Extraction",
-  logistics: "Belts & pipes",
   power: "Power",
-  organization: "Foundations",
-  transport: "Vehicles & rails",
-  special: "HUB & special",
-  player: "Pioneers",
-  vehicle: "Vehicles",
+  logistics: "Logistics",
+  organization: "Organization",
+  foundations: "Foundations",
+  walls: "Walls",
+  architecture: "Architecture",
+  transport: "Vehicles",
   resource: "Resource nodes",
+  player: "Pioneers",
   other: "Other",
 };
 
 export const DEFAULT_LAYERS: Record<EntityCategory, boolean> = {
-  production: true,
-  extraction: true,
-  logistics: true,
-  power: true,
-  organization: false,
-  transport: true,
   special: true,
-  player: true,
-  vehicle: true,
+  production: true,
+  power: true,
+  logistics: true,
+  organization: true,
+  foundations: false,
+  walls: false,
+  architecture: false,
+  transport: true,
   resource: true,
+  player: true,
   other: false,
 };

@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/auth/guard";
 import { hubForRequest } from "@/lib/world/registry";
 import { logger } from "@/lib/log";
 
@@ -5,6 +6,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  const user = await requireUser();
+  if (user instanceof Response) return user;
   const hub = await hubForRequest(request);
   await hub.whenReady();
   logger.info("sse connect", { serverId: hub.getEntry().id });

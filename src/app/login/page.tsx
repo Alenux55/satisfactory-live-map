@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
-import { LiveMap } from "@/components/map/live-map";
+import { LoginForm } from "@/components/auth/login-form";
 import { currentUser } from "@/lib/auth/guard";
 import { userCount } from "@/lib/auth/store";
 
-export default async function Home() {
+export default async function LoginPage() {
   if ((await userCount()) === 0) redirect("/setup");
-  const user = await currentUser();
-  if (!user) redirect("/login");
-  return <LiveMap />;
+  if (await currentUser()) redirect("/");
+  return <LoginForm />;
 }

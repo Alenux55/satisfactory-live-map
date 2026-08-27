@@ -46,10 +46,14 @@ next-env.d.ts
 /data/uploads/*
 /data/staging/*
 /data/config.json
+/data/users.json
+/data/reset-tokens.json
+/data/auth-secret.txt
 /data/server.log
 /data/server.pid
 /data/world-map.jpg
 /data/world-map.jpg.part
+/data/icons/*
 !/data/saves/.gitkeep
 !/data/uploads/.gitkeep
 !/data/staging/.gitkeep

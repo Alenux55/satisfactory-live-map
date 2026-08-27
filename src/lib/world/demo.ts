@@ -36,6 +36,10 @@ function machine(
     purity: extra?.purity,
     claimed: extra?.claimed,
     resource: extra?.resource,
+    clock: extra?.clock,
+    powerShards: extra?.powerShards,
+    somersloops: extra?.somersloops,
+    production: extra?.production,
   };
 }
 
@@ -56,7 +60,7 @@ function foundationGrid(count: number): MapEntity[] {
     for (let c = 0; c < cols; c++) {
       if (out.length >= count) return out;
       out.push(
-        machine("Foundation_8x4_01", "organization", OX + c * 8, OY + r * 8, 0, 8, 8, {
+        machine("Foundation_8x4_01", "foundations", OX + c * 8, OY + r * 8, 0, 8, 8, {
           id: `demo:foundation:${r}:${c}`,
         }),
       );
@@ -148,7 +152,7 @@ export function buildDemoWorld(tick: number): MapEntity[] {
     const mx = OX - 40;
     const my = OY + 8 + i * 22;
     entities.push(
-      machine("MinerMk1", "extraction", mx, my, 90, 16, 16, {
+      machine("MinerMk1", "production", mx, my, 90, 16, 16, {
         id: `demo:miner:${i}`,
         recipe: "Iron Ore",
       }),
@@ -184,6 +188,10 @@ export function buildDemoWorld(tick: number): MapEntity[] {
       machine("ConstructorMk1", "production", cx, cy, 0, 8, 10, {
         id: `demo:constructor:${i}`,
         recipe: i % 2 === 0 ? "Iron Plate" : "Iron Rod",
+        clock: i === 0 ? 150 : 100,
+        powerShards: i === 0 ? 1 : undefined,
+        somersloops: i === 0 ? 1 : undefined,
+        production: i === 0 ? 300 : 100,
       }),
     );
     entities.push(belt(cx + 6, cy, cx + 18, cy, 2));
@@ -245,7 +253,7 @@ export function buildDemoWorld(tick: number): MapEntity[] {
         id: "demo:assembler:0",
         recipe: "Reinforced Iron Plate",
       }),
-      machine("Tractor", "vehicle", OX - 12, OY - 8, 40 + t * 8, 6, 10, {
+      machine("Tractor", "transport", OX - 12, OY - 8, 40 + t * 8, 6, 10, {
         id: "demo:tractor",
         label: "Tractor",
       }),
@@ -254,7 +262,7 @@ export function buildDemoWorld(tick: number): MapEntity[] {
 
   if (t >= 8) {
     entities.push(
-      machine("WaterPump", "extraction", OX - 70, OY + 40, 0, 12, 12, {
+      machine("WaterPump", "production", OX - 70, OY + 40, 0, 12, 12, {
         id: "demo:water",
       }),
       machine("PipelineMk1", "logistics", OX - 70, OY + 40, 0, 1, 1, {

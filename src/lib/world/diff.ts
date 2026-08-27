@@ -15,6 +15,10 @@ export function fingerprint(entity: MapEntity): string {
     entity.purity ?? "",
     entity.claimed === true ? "1" : "0",
     entity.resource ?? "",
+    entity.clock ?? "",
+    entity.powerShards ?? "",
+    entity.somersloops ?? "",
+    entity.production ?? "",
     path,
   ].join("|");
 }

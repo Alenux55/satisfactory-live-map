@@ -1,16 +1,17 @@
 import type { EntityCategory } from "./types";
 
 export const CATEGORY_COLORS: Record<EntityCategory, string> = {
-  production: "#ff9f43",
-  extraction: "#e67e22",
-  logistics: "#f6c90e",
-  power: "#3ecfcf",
-  organization: "#64748b",
-  transport: "#a78bfa",
   special: "#f472b6",
-  player: "#4ade80",
-  vehicle: "#fb7185",
+  production: "#ff9f43",
+  power: "#3ecfcf",
+  logistics: "#f6c90e",
+  organization: "#94a3b8",
+  foundations: "#64748b",
+  walls: "#7c8b9a",
+  architecture: "#8b7c6e",
+  transport: "#a78bfa",
   resource: "#6f505d",
+  player: "#4ade80",
   other: "#94a3b8",
 };
 
@@ -58,38 +59,35 @@ export function shortType(typePath: string): string {
 export function categorize(typePath: string): EntityCategory {
   const p = typePath;
   if (/Char_Player|PlayerState/i.test(p)) return "player";
-  if (/CyberWagon|FactoryCart|Wheeled|Explorer|Tractor|Truck|Golfcart/i.test(p) && !/TrainStation|Railroad/i.test(p)) {
-    return "vehicle";
-  }
   if (/ResourceNode|FrackingSatellite|FrackingCore|Geyser/i.test(p) && !/Miner|Extractor|Pump|Generator/i.test(p)) {
     return "resource";
-  }
-  if (/Miner|OilPump|WaterPump|ResourceWell|FrackingExtractor|Geothermal/i.test(p)) {
-    return "extraction";
-  }
-  if (/Conveyor|Pipeline(?!Pump)|Storage|Splitter|Merger|Lift|PipePump|PipelinePump|Valve|Junction|HyperTube|PipeHyper/i.test(p)) {
-    return "logistics";
-  }
-  if (/TrainStation|Railroad|Train|Drone|JumpPad|LandingPad|Freight/i.test(p)) {
-    return "transport";
-  }
-  if (/Generator|PowerPole|PowerLine|WallOutlet|PowerStorage|PowerSwitch|PriorityPower/i.test(p)) {
-    return "power";
-  }
-  if (/Foundation|Ramp|Wall|Walkway|Stair|Roof|Pillar|Beam|Lookout|Ceiling|Door|Window|Catwalk|Fence/i.test(p)) {
-    return "organization";
   }
   if (/HubTerminal|Hub|SpaceElevator|Mam|WorkBench|Workshop|AwesomeSink|RadarTower|Beacon|TheHub/i.test(p)) {
     return "special";
   }
+  if (/Generator|PowerPole|PowerLine|WallOutlet|PowerStorage|PowerSwitch|PriorityPower|NuclearPower|Geothermal/i.test(p)) {
+    return "power";
+  }
   if (
-    /Constructor|Assembler|Manufacturer|Smelter|Foundry|Refinery|Blender|Packager|Particle|Converter|Encoder|Decoder|Nuclear|Accelerator|Mixer|Hadron|Quantum/i.test(
+    /Miner|OilPump|WaterPump|ResourceWell|FrackingExtractor|Constructor|Assembler|Manufacturer|Smelter|Foundry|Refinery|Blender|Packager|Particle|Converter|Encoder|Decoder|Accelerator|Mixer|Hadron|Quantum/i.test(
       p,
     )
   ) {
     return "production";
   }
-  if (/Vehicle|Locomotive|FreightWagon/i.test(p)) return "vehicle";
+  if (/TrainStation|Railroad|Train|Drone|HyperTube|PipeHyper|LandingPad|Freight|Locomotive|FreightWagon/i.test(p)) {
+    return "transport";
+  }
+  if (/CyberWagon|FactoryCart|Wheeled|Explorer|Tractor|Truck|GolfCart|Vehicle/i.test(p) && !/TrainStation|Railroad/i.test(p)) {
+    return "transport";
+  }
+  if (/Conveyor|Pipeline|Storage|Splitter|Merger|Lift|PipePump|PipelinePump|Valve|Junction/i.test(p)) {
+    return "logistics";
+  }
+  if (/Foundation|Ramp/i.test(p) && !/Wall/i.test(p)) return "foundations";
+  if (/Wall|Door|Window/i.test(p) && !/Outlet|Power/i.test(p)) return "walls";
+  if (/Roof|Walkway|Stair|Pillar|Beam|Frame|Catwalk|Fence|Railing|Barrier/i.test(p)) return "architecture";
+  if (/Lookout|Sign|Billboard|Label|Floodlight|StreetLight|CeilingLight|Ladder|JumpPad/i.test(p)) return "organization";
   return "other";
 }
 
@@ -99,7 +97,7 @@ export function footprintFor(typePath: string): Size {
   }
   const category = categorize(typePath);
   if (category === "logistics") return { w: 2, h: 2 };
-  if (category === "organization") return { w: 8, h: 8 };
+  if (category === "foundations" || category === "walls" || category === "architecture") return { w: 8, h: 8 };
   if (category === "power") return { w: 2, h: 2 };
   return { w: 6, h: 6 };
 }

@@ -1,0 +1,170 @@
+import { NextResponse } from "next/server";
+import { isValidEmail, isValidUsername, verifyPassword } from "@/lib/auth/password";
+import { clearSessionCookie, setSessionCookie } from "@/lib/auth/session";
+import {
+  consumeResetToken,
+  createResetToken,
+  createUser,
+  getUserByEmail,
+  getUserByUsername,
+  setUserPassword,
+  updateUser,
+  userCount,
+} from "@/lib/auth/store";
+import { currentUser, requireUser } from "@/lib/auth/guard";
+import { publicOrigin, sendPasswordResetEmail, smtpConfigured } from "@/lib/auth/mail";
+import { MIN_PASSWORD_LENGTH, toPublicUser, type UserPrefs } from "@/lib/auth/types";
+import { logger, withRequestLog } from "@/lib/log";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const loginHits = new Map<string, { count: number; resetAt: number }>();
+
+function loginAllowed(key: string): boolean {
+  const now = Date.now();
+  const hit = loginHits.get(key);
+  if (!hit || hit.resetAt < now) {
+    loginHits.set(key, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    return true;
+  }
+  hit.count += 1;
+  return hit.count <= 8;
+}
+
+export async function GET() {
+  return withRequestLog("GET", "/api/auth", async () => {
+    const setupRequired = (await userCount()) === 0;
+    const user = await currentUser();
+    return NextResponse.json({
+      setupRequired,
+      smtpConfigured: smtpConfigured(),
+      user: user ? toPublicUser(user) : null,
+    });
+  });
+}
+
+export async function POST(request: Request) {
+  return withRequestLog("POST", "/api/auth", async () => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const action = typeof body.action === "string" ? body.action : "";
+
+    if (action === "setup") {
+      if ((await userCount()) > 0) {
+        return NextResponse.json({ error: "Setup is already complete" }, { status: 409 });
+      }
+      const username = String(body.username ?? "");
+      const password = String(body.password ?? "");
+      const email = typeof body.email === "string" ? body.email : "";
+      if (!isValidUsername(username)) {
+        return NextResponse.json({ error: "Username must be 3–32 letters, numbers, or underscores" }, { status: 400 });
+      }
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        return NextResponse.json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` }, { status: 400 });
+      }
+      if (email && !isValidEmail(email)) {
+        return NextResponse.json({ error: "Invalid email" }, { status: 400 });
+      }
+      const user = await createUser({
+        username,
+        email: email || null,
+        password,
+        role: "admin",
+      });
+      await setSessionCookie(user.id, request);
+      logger.info("first admin created", { username: user.username });
+      return NextResponse.json({ user: toPublicUser(user) });
+    }
+
+    if (action === "login") {
+      const username = String(body.username ?? "");
+      const password = String(body.password ?? "");
+      const key = username.toLowerCase() || request.headers.get("x-forwarded-for") || "anon";
+      if (!loginAllowed(key)) {
+        return NextResponse.json({ error: "Too many sign-in attempts. Try again in a few minutes." }, { status: 429 });
+      }
+      const user = await getUserByUsername(username);
+      if (!user || !(await verifyPassword(password, user.passwordHash))) {
+        return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
+      }
+      await setSessionCookie(user.id, request);
+      logger.info("user signed in", { username: user.username, role: user.role });
+      return NextResponse.json({ user: toPublicUser(user) });
+    }
+
+    if (action === "logout") {
+      await clearSessionCookie();
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "forgot") {
+      const identifier = String(body.username ?? body.email ?? "").trim();
+      if (identifier && smtpConfigured()) {
+        const user = identifier.includes("@")
+          ? await getUserByEmail(identifier)
+          : await getUserByUsername(identifier);
+        if (user?.email) {
+          try {
+            const token = await createResetToken(user.id);
+            const url = `${publicOrigin(request)}/reset?token=${encodeURIComponent(token)}`;
+            await sendPasswordResetEmail(user.email, url);
+          } catch (error) {
+            logger.error("password reset email failed", {
+              err: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+      return NextResponse.json({
+        ok: true,
+        smtpConfigured: smtpConfigured(),
+        message: smtpConfigured()
+          ? "If that account has an email address, a reset link is on its way."
+          : "Password reset email is not configured. Ask an admin to set a new password.",
+      });
+    }
+
+    if (action === "reset") {
+      const token = String(body.token ?? "");
+      const password = String(body.password ?? "");
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        return NextResponse.json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` }, { status: 400 });
+      }
+      const userId = await consumeResetToken(token);
+      if (!userId) {
+        return NextResponse.json({ error: "That reset link is invalid or expired" }, { status: 400 });
+      }
+      await setUserPassword(userId, password);
+      await setSessionCookie(userId, request);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "prefs") {
+      const user = await requireUser();
+      if (user instanceof Response) return user;
+      const prefs = body.prefs;
+      if (!prefs || typeof prefs !== "object") {
+        return NextResponse.json({ error: "Expected prefs" }, { status: 400 });
+      }
+      const next = await updateUser(user.id, { prefs: prefs as UserPrefs });
+      return NextResponse.json({ user: toPublicUser(next) });
+    }
+
+    if (action === "password") {
+      const user = await requireUser();
+      if (user instanceof Response) return user;
+      const current = String(body.currentPassword ?? "");
+      const next = String(body.password ?? "");
+      if (!(await verifyPassword(current, user.passwordHash))) {
+        return NextResponse.json({ error: "Current password is wrong" }, { status: 400 });
+      }
+      if (next.length < MIN_PASSWORD_LENGTH) {
+        return NextResponse.json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` }, { status: 400 });
+      }
+      await setUserPassword(user.id, next);
+      return NextResponse.json({ ok: true });
+    }
+
+    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+  });
+}

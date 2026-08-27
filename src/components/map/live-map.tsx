@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Menu } from "lucide-react";
+import { Menu, Layers } from "lucide-react";
 import type { ImageOverlay, Map as LeafletMap } from "leaflet";
 import { applyDelta } from "@/lib/world/diff";
 import {
@@ -16,7 +16,6 @@ import {
   DEFAULT_LAYERS,
   DEMO_SERVER_ID,
   type ConfigPatch,
-  type EntityCategory,
   type HubConfig,
   type HubStatus,
   type MapEntity,
@@ -27,6 +26,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { attachEntityCanvas, type EntityCanvasHandle } from "@/components/map/entity-canvas";
 import { ControlPanel } from "@/components/map/control-panel";
+import { LayersPanel } from "@/components/map/layers-panel";
+import type { PublicUser } from "@/lib/auth/types";
 
 export function LiveMap() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,51 +40,53 @@ export function LiveMap() {
   const [config, setConfig] = useState<HubConfig | null>(null);
   const [serverId, setServerId] = useState(DEMO_SERVER_ID);
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
+  const [hiddenTypes, setHiddenTypes] = useState<string[]>([]);
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const [account, setAccount] = useState<PublicUser | null>(null);
+  const [prefsReady, setPrefsReady] = useState(false);
   const [selected, setSelected] = useState<MapEntity | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [useTerrain, setUseTerrain] = useState(true);
+  const [layersOpen, setLayersOpen] = useState(false);
   const [terrainReady, setTerrainReady] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
   const overlaysRef = useRef<{ schematic: ImageOverlay; terrain: ImageOverlay | null } | null>(null);
   const zTouchedRef = useRef(false);
 
   useEffect(() => {
-    try {
-      if (localStorage.getItem("ficsit-terrain") === "0") setUseTerrain(false);
-      const stored = localStorage.getItem("ficsit-server");
-      if (stored) setServerId(stored);
-    } catch {
-      // private mode
-    }
+    void (async () => {
+      const response = await fetch("/api/auth", { cache: "no-store" });
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      const body = (await response.json()) as { user?: PublicUser | null };
+      if (!body.user) {
+        window.location.href = "/login";
+        return;
+      }
+      setAccount(body.user);
+      setServerId(body.user.prefs.serverId || DEMO_SERVER_ID);
+      setLayers(body.user.prefs.layers ?? DEFAULT_LAYERS);
+      setHiddenTypes(body.user.prefs.hiddenTypes ?? []);
+      setPrefsReady(true);
+    })();
   }, []);
 
   const selectServer = useCallback((id: string) => {
     setServerId(id);
     setSelected(null);
     zTouchedRef.current = false;
-    try {
-      localStorage.setItem("ficsit-server", id);
-    } catch {
-      // private mode
-    }
   }, []);
 
-  const setTerrainPref = useCallback((on: boolean) => {
-    setUseTerrain(on);
-    try {
-      localStorage.setItem("ficsit-terrain", on ? "1" : "0");
-    } catch {
-      // private mode
-    }
-  }, []);
-
+  const [entityMap, setEntityMap] = useState(new Map<string, MapEntity>());
   const [zExtent, setZExtent] = useState({ min: -50, max: 800 });
   const [zLower, setZLower] = useState(-50);
   const [zUpper, setZUpper] = useState(800);
 
   const pushEntities = useCallback((next: Map<string, MapEntity>) => {
     entitiesRef.current = next;
+    setEntityMap(next);
     canvasRef.current?.setEntities(next);
     let min = Infinity;
     let max = -Infinity;
@@ -110,6 +113,10 @@ export function LiveMap() {
 
   const loadSnapshot = useCallback(async () => {
     const response = await fetch(`/api/world?server=${encodeURIComponent(serverId)}`, { cache: "no-store" });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
     if (!response.ok) return;
     const snapshot = (await response.json()) as WorldSnapshot;
     revRef.current = snapshot.rev;
@@ -118,6 +125,10 @@ export function LiveMap() {
 
   const loadConfig = useCallback(async () => {
     const response = await fetch(`/api/config?server=${encodeURIComponent(serverId)}`, { cache: "no-store" });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
     if (!response.ok) return;
     const body = (await response.json()) as { config: HubConfig; status: HubStatus };
     setConfig(body.config);
@@ -132,6 +143,14 @@ export function LiveMap() {
     layersRef.current = layers;
     canvasRef.current?.setLayers(layers);
   }, [layers]);
+
+  useEffect(() => {
+    canvasRef.current?.setHiddenTypes(hiddenTypes);
+  }, [hiddenTypes]);
+
+  useEffect(() => {
+    canvasRef.current?.setHighlight(highlight);
+  }, [highlight]);
 
   useEffect(() => {
     canvasRef.current?.setZRange({ min: zLower, max: zUpper });
@@ -199,6 +218,7 @@ export function LiveMap() {
 
       const canvas = attachEntityCanvas(L, map, (entity) => setSelected(entity));
       canvas.setLayers(layersRef.current);
+      canvas.setHiddenTypes(hiddenTypes);
       canvas.setEntities(entitiesRef.current);
       canvasRef.current = canvas;
 
@@ -225,7 +245,7 @@ export function LiveMap() {
     const map = mapRef.current;
     const overlays = overlaysRef.current;
     if (!map || !overlays) return;
-    const wantTerrain = useTerrain && overlays.terrain;
+    const wantTerrain = overlays.terrain;
     if (wantTerrain && overlays.terrain) {
       if (!map.hasLayer(overlays.terrain)) overlays.terrain.addTo(map);
       if (map.hasLayer(overlays.schematic)) map.removeLayer(overlays.schematic);
@@ -233,9 +253,25 @@ export function LiveMap() {
       if (overlays.terrain && map.hasLayer(overlays.terrain)) map.removeLayer(overlays.terrain);
       if (!map.hasLayer(overlays.schematic)) overlays.schematic.addTo(map);
     }
-  }, [useTerrain, terrainReady]);
+  }, [terrainReady]);
 
   useEffect(() => {
+    if (!prefsReady || !account) return;
+    const timer = window.setTimeout(() => {
+      void fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "prefs",
+          prefs: { serverId, layers, hiddenTypes },
+        }),
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [account, hiddenTypes, layers, prefsReady, serverId]);
+
+  useEffect(() => {
+    if (!prefsReady) return;
     void loadSnapshot();
     void loadConfig();
     const source = new EventSource(`/api/world/stream?server=${encodeURIComponent(serverId)}`);
@@ -257,7 +293,7 @@ export function LiveMap() {
       });
     });
     return () => source.close();
-  }, [loadConfig, loadSnapshot, pushEntities, serverId]);
+  }, [loadConfig, loadSnapshot, prefsReady, pushEntities, serverId]);
 
   const patchConfig = async (patch: ConfigPatch) => {
     if (patch.removeServerId && patch.removeServerId === serverId) {
@@ -290,12 +326,20 @@ export function LiveMap() {
     await loadConfig();
   };
 
+  const logout = async () => {
+    await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "logout" }),
+    });
+    window.location.href = "/login";
+  };
+
   const panel = (
     <ControlPanel
       status={status}
       config={config}
       serverId={serverId}
-      layers={layers}
       selected={selected}
       zExtent={zExtent}
       zLower={zLower}
@@ -313,20 +357,19 @@ export function LiveMap() {
         setZLower(zExtent.min);
         setZUpper(zExtent.max);
       }}
-      useTerrain={useTerrain}
-      terrainReady={terrainReady}
-      onTerrain={setTerrainPref}
-      onLayers={setLayers}
       onServerId={selectServer}
       onConfig={patchConfig}
       onUpload={uploadSave}
       onRefresh={refresh}
+      account={account}
+      canEditCatalog={account?.role === "admin"}
+      onLogout={logout}
     />
   );
 
   return (
     <div className="flex h-dvh min-h-0 bg-background">
-      <aside className="hidden w-[360px] shrink-0 border-r border-border bg-sidebar md:block">{panel}</aside>
+      <aside className="hidden w-[320px] shrink-0 border-r border-border bg-sidebar md:block">{panel}</aside>
       <div className="relative min-w-0 flex-1">
         <div ref={containerRef} className="h-full w-full bg-[#0c1c2c]" />
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
@@ -345,11 +388,45 @@ export function LiveMap() {
               </SheetContent>
             </Sheet>
           </div>
-          <div className="ml-auto rounded-md border border-border/70 bg-background/80 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
-            {cursor ? `X ${cursor.x.toFixed(0)}  Y ${cursor.y.toFixed(0)}` : "MASSAGE-2(A-B)b"}
+          <div className="ml-auto flex items-start gap-2">
+            <div className="pointer-events-auto md:hidden">
+              <Sheet open={layersOpen} onOpenChange={setLayersOpen}>
+                <SheetTrigger asChild>
+                  <Button size="icon" variant="secondary">
+                    <Layers />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-[min(100%,22rem)] p-0">
+                  <SheetHeader className="sr-only">
+                    <SheetTitle>Layers</SheetTitle>
+                  </SheetHeader>
+                  <LayersPanel
+                    entities={entityMap}
+                    layers={layers}
+                    hiddenTypes={hiddenTypes}
+                    onLayers={setLayers}
+                    onHiddenTypes={setHiddenTypes}
+                    onHover={setHighlight}
+                  />
+                </SheetContent>
+              </Sheet>
+            </div>
+            <div className="rounded-md border border-border/70 bg-background/80 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
+              {cursor ? `X ${cursor.x.toFixed(0)}  Y ${cursor.y.toFixed(0)}` : "MASSAGE-2(A-B)b"}
+            </div>
           </div>
         </div>
       </div>
+      <aside className="hidden w-[300px] shrink-0 border-l border-border bg-sidebar md:block">
+        <LayersPanel
+          entities={entityMap}
+          layers={layers}
+          hiddenTypes={hiddenTypes}
+          onLayers={setLayers}
+          onHiddenTypes={setHiddenTypes}
+          onHover={setHighlight}
+        />
+      </aside>
     </div>
   );
 }

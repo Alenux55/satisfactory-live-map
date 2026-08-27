@@ -1,28 +1,10 @@
 export type NodePurity = "impure" | "normal" | "pure";
 
-/** Purity fill and type outline used on SCIM's node legend (publicly documented; not SCIM source). */
+/** Purity is the circle fill. Orange / yellow / green per the map legend. */
 export const PURITY_COLORS: Record<NodePurity, string> = {
-  impure: "#d23430",
-  normal: "#f26418",
-  pure: "#80b139",
-};
-
-export const RESOURCE_TYPE_COLORS: Record<string, string> = {
-  iron: "#6f505d",
-  copper: "#955d57",
-  limestone: "#bfb2a8",
-  coal: "#505050",
-  caterium: "#d2bc96",
-  quartz: "#dd9ac9",
-  sulfur: "#cdbf66",
-  uranium: "#5e8d52",
-  bauxite: "#c88c72",
-  sam: "#6e2ea9",
-  oil: "#141414",
-  water: "#a5ccdf",
-  nitrogen: "#e8e5c4",
-  geyser: "#c0c0ff",
-  unknown: "#888888",
+  impure: "#f97316",
+  normal: "#eab308",
+  pure: "#22c55e",
 };
 
 export const RESOURCE_TYPE_LABELS: Record<string, string> = {
@@ -68,14 +50,14 @@ export function resourceKind(path: string, typePath = ""): string {
   if (/bauxite/.test(s)) return "bauxite";
   if (/copper/.test(s)) return "copper";
   if (/caterium|gold/.test(s)) return "caterium";
-  if (/iron/.test(s)) return "iron";
   if (/uranium/.test(s)) return "uranium";
   if (/quartz/.test(s)) return "quartz";
-  if (/\bsam\b|_sam/i.test(s)) return "sam";
-  if (/limestone|desc_stone|ore_stone/.test(s)) return "limestone";
+  if (/\bsam\b|_sam|desc_sam|ore_sam/.test(s)) return "sam";
+  if (/limestone|desc_stone|ore_stone|rawstone/.test(s)) return "limestone";
   if (/sulfur/.test(s)) return "sulfur";
   if (/water/.test(s)) return "water";
   if (/coal/.test(s)) return "coal";
+  if (/iron/.test(s)) return "iron";
   return "unknown";
 }
 

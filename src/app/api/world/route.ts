@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/auth/guard";
 import { hubForRequest } from "@/lib/world/registry";
 import { logger, withRequestLog } from "@/lib/log";
 
@@ -6,6 +7,8 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   return withRequestLog("GET", "/api/world", async () => {
+    const user = await requireUser();
+    if (user instanceof Response) return user;
     const hub = await hubForRequest(request);
     const snapshot = hub.getSnapshot();
     const started = Date.now();
@@ -25,6 +28,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   return withRequestLog("POST", "/api/world", async () => {
+    const user = await requireUser();
+    if (user instanceof Response) return user;
     const hub = await hubForRequest(request);
     await hub.tick();
     return Response.json(hub.getStatus());

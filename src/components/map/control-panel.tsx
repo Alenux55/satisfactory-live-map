@@ -1,41 +1,35 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FolderOpen, Globe2, Layers, Plus, Radio, RefreshCw, Server, Timer, Trash2, UnfoldVertical, Upload } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FolderOpen, LogOut, Plus, Radio, RefreshCw, Server, Timer, Trash2, UnfoldVertical, Upload, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { CATEGORY_COLORS, prettyType } from "@/lib/world/categorize";
+import { prettyType } from "@/lib/world/categorize";
 import { formatBytes, formatDuration, formatInterval } from "@/lib/world/coords";
-import {
-  PURITY_COLORS,
-  RESOURCE_LEGEND_ORDER,
-  RESOURCE_TYPE_COLORS,
-  RESOURCE_TYPE_LABELS,
-} from "@/lib/world/resource";
+import { RESOURCE_TYPE_LABELS } from "@/lib/world/resource";
+import { layerIcons, layerLabel } from "@/lib/world/builder-menu";
 import {
   CATEGORY_LABELS,
   DEMO_SERVER_ID,
   POLL_INTERVALS_SEC,
   type ConfigPatch,
-  type EntityCategory,
   type HubConfig,
   type HubStatus,
   type MapEntity,
 } from "@/lib/world/types";
-
-const CATEGORIES = Object.keys(CATEGORY_LABELS) as EntityCategory[];
+import type { PublicUser } from "@/lib/auth/types";
+import { Section } from "@/components/map/section";
+import { WikiIcon } from "@/components/map/wiki-icon";
 
 type Props = {
   status: HubStatus | null;
   config: HubConfig | null;
   serverId: string;
-  layers: Record<EntityCategory, boolean>;
   selected: MapEntity | null;
   zExtent: { min: number; max: number };
   zLower: number;
@@ -43,21 +37,19 @@ type Props = {
   onZLower: (value: number) => void;
   onZUpper: (value: number) => void;
   onZReset: () => void;
-  useTerrain: boolean;
-  terrainReady: boolean;
-  onTerrain: (on: boolean) => void;
-  onLayers: (layers: Record<EntityCategory, boolean>) => void;
   onServerId: (id: string) => void;
   onConfig: (patch: ConfigPatch) => Promise<void>;
   onUpload: (file: File) => Promise<void>;
   onRefresh: () => Promise<void>;
+  account: PublicUser | null;
+  canEditCatalog: boolean;
+  onLogout: () => Promise<void>;
 };
 
 export function ControlPanel({
   status,
   config,
   serverId,
-  layers,
   selected,
   zExtent,
   zLower,
@@ -65,15 +57,15 @@ export function ControlPanel({
   onZLower,
   onZUpper,
   onZReset,
-  useTerrain,
-  terrainReady,
-  onTerrain,
-  onLayers,
   onServerId,
   onConfig,
   onUpload,
   onRefresh,
+  account,
+  canEditCatalog,
+  onLogout,
 }: Props) {
+  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dirDraft, setDirDraft] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
@@ -116,10 +108,30 @@ export function ControlPanel({
             Original viewer. Satisfactory Calculator is proprietary — this watches your save folder and
             streams only what changed.
           </p>
+          {account ? (
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-border/70 bg-card/50 px-2 py-1.5">
+              <p className="truncate text-[11px]">
+                <span className="text-foreground">{account.username}</span>{" "}
+                <span className="font-mono text-muted-foreground">{account.role}</span>
+              </p>
+              <span className="flex shrink-0 gap-1">
+                {account.role === "admin" ? (
+                  <Button size="xs" variant="ghost" onClick={() => router.push("/admin/users")}>
+                    <Users />
+                    Accounts
+                  </Button>
+                ) : null}
+                <Button size="xs" variant="ghost" onClick={() => void onLogout()}>
+                  <LogOut />
+                  Sign out
+                </Button>
+              </span>
+            </div>
+          ) : null}
         </div>
 
+        <Section title="Session">
         <div className="rounded-lg border border-border/80 bg-card/70 p-3">
-          <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Session</p>
           <p className="mt-1 font-heading text-sm">{status?.header?.sessionName ?? "Grass Fields demo"}</p>
           <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
             <dt>Entities</dt>
@@ -157,12 +169,10 @@ export function ControlPanel({
           ) : null}
           <p className="mt-2 text-[11px] text-muted-foreground">{status?.progressMessage}</p>
         </div>
+        </Section>
 
+        <Section title="Server" icon={<Server className="size-3.5" />}>
         <div className="flex flex-col gap-3">
-          <Label htmlFor="server" className="inline-flex items-center gap-1.5">
-            <Server className="size-3.5" />
-            Server
-          </Label>
           <select
             id="server"
             className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -180,11 +190,13 @@ export function ControlPanel({
             value={nameDraft ?? current?.name ?? ""}
             onChange={(event) => setNameDraft(event.target.value)}
             onBlur={() => {
+              if (!canEditCatalog) return;
               if (nameDraft != null && current && nameDraft.trim() && nameDraft !== current.name) {
                 void onConfig({ updateServer: { id: current.id, name: nameDraft.trim() } });
               }
             }}
             placeholder="Display name"
+            readOnly={!canEditCatalog}
           />
           {isDemo ? (
             <p className="text-[11px] text-muted-foreground">
@@ -201,6 +213,7 @@ export function ControlPanel({
                 value={dirDraft ?? current?.savesDir ?? ""}
                 onChange={(event) => setDirDraft(event.target.value)}
                 onBlur={() => {
+                  if (!canEditCatalog) return;
                   if (dirDraft != null && current && dirDraft !== current.savesDir) {
                     void onConfig({
                       updateServer: { id: current.id, savesDir: dirDraft, saveFile: null },
@@ -209,6 +222,7 @@ export function ControlPanel({
                 }}
                 placeholder="%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server"
                 className="font-mono text-xs"
+                readOnly={!canEditCatalog}
               />
               <p className="text-[11px] text-muted-foreground">
                 Windows dedicated server:{" "}
@@ -236,7 +250,7 @@ export function ControlPanel({
                 }
               }}
             />
-            <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
+            <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy || !canEditCatalog}>
               <Upload />
               Upload .sav
             </Button>
@@ -256,27 +270,30 @@ export function ControlPanel({
               <RefreshCw />
               Scan now
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="ml-auto"
-              disabled={busy || isDemo}
-              onClick={() => {
-                if (!current || isDemo) return;
-                void onConfig({ removeServerId: current.id });
-              }}
-            >
-              <Trash2 />
-              Remove
-            </Button>
+            {canEditCatalog ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto"
+                disabled={busy || isDemo}
+                onClick={() => {
+                  if (!current || isDemo) return;
+                  void onConfig({ removeServerId: current.id });
+                }}
+              >
+                <Trash2 />
+                Remove
+              </Button>
+            ) : null}
           </div>
-          {isDemo ? (
+          {isDemo && canEditCatalog ? (
             <p className="text-[11px] text-muted-foreground">
               Upload while Demo is selected creates a new server from that snapshot.
             </p>
           ) : null}
         </div>
 
+        {canEditCatalog ? (
         <div className="flex flex-col gap-2 rounded-lg border border-border/70 bg-card/50 p-3">
           <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Add server</p>
           <Input
@@ -313,38 +330,27 @@ export function ControlPanel({
             Add save location
           </Button>
         </div>
+        ) : null}
+        </Section>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="terrain" className="inline-flex items-center gap-1.5">
-              <Globe2 className="size-3.5" />
-              Terrain map
-            </Label>
-            <Switch id="terrain" checked={useTerrain} onCheckedChange={onTerrain} />
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            {terrainReady
-              ? "Official wiki Map.jpg (Coffee Stain in-game map), cached as data/world-map.jpg. Not SCIM tiles."
-              : "Downloading the 1.0 wiki map (~2 MB). Schematic grid stays until it arrives."}
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <Label className="inline-flex items-center gap-1.5">
-              <Timer className="size-3.5" />
-              Update period
-            </Label>
+        <Section
+          title="Update period"
+          icon={<Timer className="size-3.5" />}
+          actions={
             <span className="font-mono text-xs text-primary">
               {formatInterval(config?.pollIntervalSeconds ?? 15)}
             </span>
-          </div>
+          }
+        >
+        <div className="flex flex-col gap-2">
           <Slider
             min={0}
             max={POLL_INTERVALS_SEC.length - 1}
             step={1}
             value={[intervalIndex]}
+            disabled={!canEditCatalog}
             onValueChange={(value) => {
+              if (!canEditCatalog) return;
               const seconds = POLL_INTERVALS_SEC[value[0] ?? 2];
               void onConfig({ pollIntervalSeconds: seconds });
             }}
@@ -359,19 +365,18 @@ export function ControlPanel({
             more often; each write still takes a few seconds to parse here.
           </p>
         </div>
+        </Section>
 
-        <Separator />
-
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <p className="inline-flex items-center gap-1.5 text-sm font-medium">
-              <UnfoldVertical className="size-3.5" />
-              Height slice
-            </p>
+        <Section
+          title="Height slice"
+          icon={<UnfoldVertical className="size-3.5" />}
+          actions={
             <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={onZReset}>
               Full
             </Button>
-          </div>
+          }
+        >
+        <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
             <span>Lower</span>
             <span className="text-foreground">{zLower.toFixed(0)} m</span>
@@ -399,118 +404,88 @@ export function ControlPanel({
             implemented here on your save data.
           </p>
         </div>
-
-        <div>
-          <p className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium">
-            <Layers className="size-3.5" />
-            Layers
-          </p>
-          <div className="flex flex-col gap-2">
-            {CATEGORIES.map((category) => (
-              <label key={category} className="flex items-center justify-between gap-2 text-sm">
-                <span className="flex items-center gap-2">
-                  <span className="size-2.5 rounded-sm" style={{ background: CATEGORY_COLORS[category] }} />
-                  {CATEGORY_LABELS[category]}
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {status?.counts[category] ?? 0}
-                  </span>
-                  <Switch
-                    checked={layers[category]}
-                    onCheckedChange={(checked) => onLayers({ ...layers, [category]: checked })}
-                  />
-                </span>
-              </label>
-            ))}
-          </div>
-          {layers.resource ? (
-            <div className="mt-3 rounded-md border border-border/70 bg-card/50 p-2.5">
-              <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                Node legend
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Outline is type, fill is purity. Smaller circles are claimed.
-              </p>
-              <div className="mt-2 flex flex-wrap gap-3">
-                {(["impure", "normal", "pure"] as const).map((purity) => (
-                  <span key={purity} className="inline-flex items-center gap-1.5 text-[11px] capitalize">
-                    <span
-                      className="size-2.5 rounded-full border border-foreground/40"
-                      style={{ background: PURITY_COLORS[purity] }}
-                    />
-                    {purity}
-                  </span>
-                ))}
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1">
-                {RESOURCE_LEGEND_ORDER.map((kind) => (
-                  <span key={kind} className="inline-flex items-center gap-1.5 text-[11px]">
-                    <span
-                      className="size-2.5 rounded-full"
-                      style={{ background: RESOURCE_TYPE_COLORS[kind], boxShadow: "inset 0 0 0 1px rgb(0 0 0 / 0.35)" }}
-                    />
-                    {RESOURCE_TYPE_LABELS[kind]}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        </Section>
 
         {selected ? (
-          <>
-            <Separator />
-            <div>
-              <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                Selected
-              </p>
-              <p className="font-heading text-sm">{selected.label || prettyType(selected.type)}</p>
-              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
-                <dt>Type</dt>
-                <dd className="text-foreground">{prettyType(selected.type)}</dd>
-                <dt>Class</dt>
-                <dd className="truncate text-foreground">{selected.category}</dd>
-                <dt>X / Y</dt>
-                <dd className="text-foreground">
-                  {selected.x.toFixed(1)}, {selected.y.toFixed(1)}
-                </dd>
-                <dt>Z</dt>
-                <dd className="text-foreground">{selected.z.toFixed(1)} m</dd>
-                {selected.recipe ? (
-                  <>
-                    <dt>Recipe</dt>
-                    <dd className="text-foreground">{selected.recipe}</dd>
-                  </>
-                ) : null}
-                {selected.resource ? (
-                  <>
-                    <dt>Resource</dt>
-                    <dd className="text-foreground">
-                      {RESOURCE_TYPE_LABELS[selected.resource] ?? selected.resource}
-                    </dd>
-                  </>
-                ) : null}
-                {selected.purity ? (
-                  <>
-                    <dt>Purity</dt>
-                    <dd className="capitalize text-foreground">{selected.purity}</dd>
-                  </>
-                ) : null}
-                {selected.category === "resource" ? (
-                  <>
-                    <dt>Claimed</dt>
-                    <dd className="text-foreground">{selected.claimed ? "yes" : "no"}</dd>
-                  </>
-                ) : null}
-              </dl>
+          <Section title="Selected" defaultOpen>
+            <div className="flex gap-3">
+              <WikiIcon
+                candidates={layerIcons(selected)}
+                label={layerLabel(selected)}
+                className="size-14 rounded-md border border-border bg-card p-1"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="font-heading text-sm">{selected.label || prettyType(selected.type)}</p>
+                <p className="text-[11px] text-muted-foreground">{CATEGORY_LABELS[selected.category]}</p>
+              </div>
             </div>
-          </>
+            <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
+              <dt>Type</dt>
+              <dd className="text-foreground">{prettyType(selected.type)}</dd>
+              <dt>X / Y</dt>
+              <dd className="text-foreground">
+                {selected.x.toFixed(1)}, {selected.y.toFixed(1)}
+              </dd>
+              <dt>Z</dt>
+              <dd className="text-foreground">{selected.z.toFixed(1)} m</dd>
+              {selected.recipe ? (
+                <>
+                  <dt>Recipe</dt>
+                  <dd className="text-foreground">{selected.recipe}</dd>
+                </>
+              ) : null}
+              {selected.clock != null ? (
+                <>
+                  <dt>Clock speed</dt>
+                  <dd className="text-foreground">{selected.clock}%</dd>
+                </>
+              ) : null}
+              {selected.powerShards != null ? (
+                <>
+                  <dt>Power shards</dt>
+                  <dd className="text-foreground">{selected.powerShards}</dd>
+                </>
+              ) : null}
+              {selected.somersloops != null ? (
+                <>
+                  <dt>Somersloops</dt>
+                  <dd className="text-foreground">{selected.somersloops}</dd>
+                </>
+              ) : null}
+              {selected.production != null ? (
+                <>
+                  <dt>Production rate</dt>
+                  <dd className="text-foreground">{selected.production}%</dd>
+                </>
+              ) : null}
+              {selected.resource ? (
+                <>
+                  <dt>Resource</dt>
+                  <dd className="text-foreground">
+                    {RESOURCE_TYPE_LABELS[selected.resource] ?? selected.resource}
+                  </dd>
+                </>
+              ) : null}
+              {selected.purity ? (
+                <>
+                  <dt>Purity</dt>
+                  <dd className="capitalize text-foreground">{selected.purity}</dd>
+                </>
+              ) : null}
+              {selected.category === "resource" ? (
+                <>
+                  <dt>Claimed</dt>
+                  <dd className="text-foreground">{selected.claimed ? "yes" : "no"}</dd>
+                </>
+              ) : null}
+            </dl>
+          </Section>
         ) : null}
 
         <p className="text-[10px] leading-relaxed text-muted-foreground">
           Satisfactory is © Coffee Stain Studios. This tool only reads saves you provide. Terrain is the
-          official wiki Map.jpg (in-game map), cached locally — not Satisfactory Calculator tiles.
+          official wiki Map.jpg (in-game map), cached locally — not Satisfactory Calculator tiles. Building
+          icons are the same wiki files.
         </p>
       </div>
     </ScrollArea>
