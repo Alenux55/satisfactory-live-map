@@ -8,7 +8,7 @@ export const WIKI_MAP_PAGE = "https://satisfactory.wiki.gg/wiki/File:Map.jpg";
 const WIKI_MAP_FILE = "https://satisfactory.wiki.gg/wiki/Special:FilePath/Map.jpg";
 const MIN_BYTES = 100_000;
 
-export const TERRAIN_CACHE = path.join(/*turbopackIgnore: true*/ process.cwd(), "data", "world-map.jpg");
+export const TERRAIN_CACHE = path.join(process.cwd(), "data", "world-map.jpg");
 
 let inflight: Promise<boolean> | null = null;
 

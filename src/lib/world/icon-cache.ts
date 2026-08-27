@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { logger } from "@/lib/log";
 
-const ICON_DIR = path.join(/*turbopackIgnore: true*/ process.cwd(), "data", "icons");
+const DATA_DIR = path.join(process.cwd(), "data");
+const ICON_DIR = path.join(DATA_DIR, "icons");
 const WIKI_FILE = "https://satisfactory.wiki.gg/wiki/Special:FilePath/";
 const inflight = new Map<string, Promise<Buffer | null>>();
 
@@ -15,7 +16,7 @@ export function safeIconFile(raw: string): string | null {
 }
 
 function cachePath(file: string): string {
-  return path.join(ICON_DIR, file);
+  return path.join(DATA_DIR, "icons", file);
 }
 
 async function downloadWikiIcon(file: string): Promise<Buffer | null> {
@@ -44,9 +45,8 @@ async function downloadWikiIcon(file: string): Promise<Buffer | null> {
 export async function loadWikiIcon(file: string): Promise<Buffer | null> {
   const safe = safeIconFile(file);
   if (!safe) return null;
-  const cached = cachePath(safe);
-  if (existsSync(/*turbopackIgnore: true*/ cached)) {
-    const { readFile } = await import("node:fs/promises");
+  const cached = path.join(DATA_DIR, "icons", safe);
+  if (existsSync(cached)) {
     return readFile(cached);
   }
   const pending = inflight.get(safe);

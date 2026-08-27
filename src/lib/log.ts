@@ -12,10 +12,12 @@ function activeLevel(): LogLevel {
   return "info";
 }
 
-function logFilePath(): string | null {
+const DATA_DIR = path.join(process.cwd(), "data");
+
+function logFilePath(): string {
   const fromEnv = process.env.FICSIT_LOG_FILE?.trim();
   if (fromEnv) return path.resolve(fromEnv);
-  return path.join(process.cwd(), "data", "server.log");
+  return path.join(DATA_DIR, "server.log");
 }
 
 export function memorySnapshot(): { rssMb: number; heapMb: number } {
@@ -36,9 +38,8 @@ let fileQueue: Promise<void> = Promise.resolve();
 
 function writeToFile(line: string): void {
   const file = logFilePath();
-  if (!file) return;
   fileQueue = fileQueue
-    .then(() => appendFile(file, `${line}\n`, "utf8"))
+    .then(() => appendFile(/* turbopackIgnore: true */ file, `${line}\n`, "utf8"))
     .catch((error) => {
       console.error(`FICSIT log file write failed: ${error instanceof Error ? error.message : error}`);
     });
