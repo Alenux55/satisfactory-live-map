@@ -32,6 +32,9 @@ export async function POST(request: Request) {
     if (password.length < MIN_PASSWORD_LENGTH) {
       return NextResponse.json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` }, { status: 400 });
     }
+    if (typeof body.passwordConfirm === "string" && body.passwordConfirm !== password) {
+      return NextResponse.json({ error: "Passwords do not match" }, { status: 400 });
+    }
     if (email && !isValidEmail(email)) {
       return NextResponse.json({ error: "Invalid email" }, { status: 400 });
     }

@@ -37,7 +37,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            Mail
+            Settings
           </Link>
         </nav>
       </div>

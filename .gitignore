@@ -48,6 +48,7 @@ next-env.d.ts
 /data/config.json
 /data/users.json
 /data/smtp.json
+/data/invite.json
 /data/history/*
 !/data/history/.gitkeep
 /data/reset-tokens.json

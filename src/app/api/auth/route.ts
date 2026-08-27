@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isValidEmail, isValidUsername, verifyPassword } from "@/lib/auth/password";
 import { clearSessionCookie, setSessionCookie } from "@/lib/auth/session";
+import { inviteSignupEnabled, verifyViewerInvite } from "@/lib/auth/invite-store";
 import {
   consumeResetToken,
   createResetToken,
@@ -32,6 +33,13 @@ function loginAllowed(key: string): boolean {
   return hit.count <= 8;
 }
 
+function mismatchPasswords(body: Record<string, unknown>, password: string): string | null {
+  if (typeof body.passwordConfirm === "string" && body.passwordConfirm !== password) {
+    return "Passwords do not match";
+  }
+  return null;
+}
+
 export async function GET() {
   return withRequestLog("GET", "/api/auth", async () => {
     const setupRequired = (await userCount()) === 0;
@@ -39,6 +47,7 @@ export async function GET() {
     return NextResponse.json({
       setupRequired,
       smtpConfigured: await smtpConfigured(),
+      signupEnabled: setupRequired ? false : await inviteSignupEnabled(),
       user: user ? toPublicUser(user) : null,
     });
   });
@@ -62,6 +71,8 @@ export async function POST(request: Request) {
       if (password.length < MIN_PASSWORD_LENGTH) {
         return NextResponse.json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` }, { status: 400 });
       }
+      const setupConfirm = mismatchPasswords(body, password);
+      if (setupConfirm) return NextResponse.json({ error: setupConfirm }, { status: 400 });
       if (email && !isValidEmail(email)) {
         return NextResponse.json({ error: "Invalid email" }, { status: 400 });
       }
@@ -74,6 +85,50 @@ export async function POST(request: Request) {
       await setSessionCookie(user.id, request);
       logger.info("first admin created", { username: user.username });
       return NextResponse.json({ user: toPublicUser(user) });
+    }
+
+    if (action === "signup") {
+      if (!(await inviteSignupEnabled())) {
+        return NextResponse.json({ error: "Viewer sign-up is not enabled" }, { status: 403 });
+      }
+      const username = String(body.username ?? "");
+      const password = String(body.password ?? "");
+      const email = String(body.email ?? "").trim();
+      const invite = String(body.invite ?? "");
+      const key = email.toLowerCase() || request.headers.get("x-forwarded-for") || "anon";
+      if (!loginAllowed(`signup:${key}`)) {
+        return NextResponse.json({ error: "Too many sign-up attempts. Try again in a few minutes." }, { status: 429 });
+      }
+      if (!isValidUsername(username)) {
+        return NextResponse.json({ error: "Username must be 3–32 letters, numbers, or underscores" }, { status: 400 });
+      }
+      if (!email || !isValidEmail(email)) {
+        return NextResponse.json({ error: "Enter the invited email address" }, { status: 400 });
+      }
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        return NextResponse.json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` }, { status: 400 });
+      }
+      const confirm = mismatchPasswords(body, password);
+      if (confirm) return NextResponse.json({ error: confirm }, { status: 400 });
+      if (!(await verifyViewerInvite(email, invite))) {
+        return NextResponse.json({ error: "That email is not invited or the invite code is wrong" }, { status: 400 });
+      }
+      try {
+        const user = await createUser({
+          username,
+          email,
+          password,
+          role: "viewer",
+        });
+        await setSessionCookie(user.id, request);
+        logger.info("viewer signed up", { username: user.username });
+        return NextResponse.json({ user: toPublicUser(user) });
+      } catch (error) {
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : "Could not create account" },
+          { status: 400 },
+        );
+      }
     }
 
     if (action === "login") {
@@ -130,6 +185,8 @@ export async function POST(request: Request) {
       if (password.length < MIN_PASSWORD_LENGTH) {
         return NextResponse.json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` }, { status: 400 });
       }
+      const resetConfirm = mismatchPasswords(body, password);
+      if (resetConfirm) return NextResponse.json({ error: resetConfirm }, { status: 400 });
       const userId = await consumeResetToken(token);
       if (!userId) {
         return NextResponse.json({ error: "That reset link is invalid or expired" }, { status: 400 });

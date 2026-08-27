@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthShell } from "@/components/auth/auth-shell";
 
-export function LoginForm() {
+export function LoginForm({ signupEnabled = false }: { signupEnabled?: boolean }) {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -60,6 +60,14 @@ export function LoginForm() {
           {busy ? "Signing in…" : "Sign in"}
         </Button>
         <p className="text-center text-xs text-muted-foreground">
+          {signupEnabled ? (
+            <>
+              <Link href="/signup" className="underline-offset-4 hover:underline">
+                Create a viewer account
+              </Link>
+              {" · "}
+            </>
+          ) : null}
           <Link href="/forgot" className="underline-offset-4 hover:underline">
             Forgot your password?
           </Link>

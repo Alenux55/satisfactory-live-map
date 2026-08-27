@@ -40,6 +40,13 @@ export const COOKIE_NAME = "ficsit_session";
 export const SESSION_DAYS = 14;
 export const RESET_TTL_MS = 60 * 60 * 1000;
 export const MIN_PASSWORD_LENGTH = 8;
+export const MIN_INVITE_CODE_LENGTH = 6;
+
+export type InvitePublicView = {
+  enabled: boolean;
+  codeSet: boolean;
+  emails: string[];
+};
 
 export const DEFAULT_LEFT_WIDTH = 320;
 export const DEFAULT_RIGHT_WIDTH = 300;

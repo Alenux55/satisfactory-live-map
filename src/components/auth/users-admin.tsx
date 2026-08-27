@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { PublicUser, UserRole } from "@/lib/auth/types";
+import { PasswordPair, passwordsMatch } from "@/components/auth/password-pair";
 
 export function UsersAdmin({ selfId }: { selfId: string }) {
   const [users, setUsers] = useState<PublicUser[]>([]);
@@ -12,6 +13,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [role, setRole] = useState<UserRole>("viewer");
   const [busy, setBusy] = useState(false);
 
@@ -31,13 +33,18 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
 
   const create = async (event: FormEvent) => {
     event.preventDefault();
+    const mismatch = passwordsMatch(password, confirm);
+    if (mismatch) {
+      setError(mismatch);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const response = await fetch("/api/auth/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, email, password, role }),
+        body: JSON.stringify({ username, email, password, passwordConfirm: confirm, role }),
       });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) {
@@ -47,6 +54,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
       setUsername("");
       setEmail("");
       setPassword("");
+      setConfirm("");
       setRole("viewer");
       await load();
     } finally {
@@ -106,10 +114,14 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           <Label htmlFor="new-email">Email</Label>
           <Input id="new-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Optional, needed for reset mail" />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="new-pass">Temporary password</Label>
-          <Input id="new-pass" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
-        </div>
+        <PasswordPair
+          idPrefix="new-pass"
+          password={password}
+          confirm={confirm}
+          onPassword={setPassword}
+          onConfirm={setConfirm}
+          passwordLabel="Password"
+        />
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-role">Role</Label>
           <select

@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
-import { LoginForm } from "@/components/auth/login-form";
+import { SignupForm } from "@/components/auth/signup-form";
 import { currentUser } from "@/lib/auth/guard";
 import { inviteSignupEnabled } from "@/lib/auth/invite-store";
 import { userCount } from "@/lib/auth/store";
 
-export default async function LoginPage() {
+export default async function SignupPage() {
   if ((await userCount()) === 0) redirect("/setup");
   if (await currentUser()) redirect("/");
-  return <LoginForm signupEnabled={await inviteSignupEnabled()} />;
+  if (!(await inviteSignupEnabled())) redirect("/login");
+  return <SignupForm />;
 }
