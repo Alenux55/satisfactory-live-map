@@ -5,6 +5,7 @@ import { worldToLatLng } from "@/lib/world/coords";
 import { PURITY_COLORS } from "@/lib/world/resource";
 import { layerIcons, layerKey } from "@/lib/world/builder-menu";
 import { iconSrc } from "@/lib/world/icons";
+import { pioneerColor } from "@/lib/world/pioneer-color";
 
 type LayerFlags = Record<EntityCategory, boolean>;
 
@@ -68,7 +69,12 @@ export function attachEntityCanvas(
 
   const visible = (entity: MapEntity) => {
     if (layers && !layers[entity.category]) return false;
-    if (hidden.has(layerKey(entity))) return false;
+    const key = layerKey(entity);
+    if (hidden.has(key)) return false;
+    if (entity.category === "resource") {
+      const claimKey = entity.claimed ? `${key}:claimed` : `${key}:unclaimed`;
+      if (hidden.has(claimKey)) return false;
+    }
     if (zRange && (entity.z < zRange.min || entity.z > zRange.max)) return false;
     return true;
   };
@@ -90,7 +96,10 @@ export function attachEntityCanvas(
       }
 
       const key = layerKey(entity);
-      const isHi = highlight != null && key === highlight;
+      const claimKey =
+        entity.category === "resource" ? (entity.claimed ? `${key}:claimed` : `${key}:unclaimed`) : null;
+      const isHi =
+        highlight != null && (key === highlight || (claimKey != null && claimKey === highlight));
       if (highlight && !isHi) ctx.globalAlpha = 0.18;
       else ctx.globalAlpha = 1;
 
@@ -112,7 +121,7 @@ export function attachEntityCanvas(
 
       const p = map.latLngToContainerPoint(worldToLatLng(entity.x, entity.y));
       if (entity.category === "resource") {
-        const radius = Math.max(6, metersToPx(7));
+        const radius = Math.max(18, metersToPx(21));
         const fill = entity.purity ? PURITY_COLORS[entity.purity] : "#888888";
         ctx.beginPath();
         ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
@@ -156,16 +165,16 @@ export function attachEntityCanvas(
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate((entity.yaw * Math.PI) / 180);
-      ctx.fillStyle = CATEGORY_COLORS[entity.category];
+      ctx.fillStyle = entity.category === "player" ? pioneerColor(entity.id) : CATEGORY_COLORS[entity.category];
       ctx.globalAlpha *= entity.category === "foundations" || entity.category === "walls" || entity.category === "architecture" ? 0.28 : 0.94;
       if (entity.category === "player") {
         ctx.beginPath();
-        ctx.moveTo(0, -8);
-        ctx.lineTo(5, 6);
-        ctx.lineTo(-5, 6);
+        ctx.moveTo(0, -10);
+        ctx.lineTo(6, 7);
+        ctx.lineTo(-6, 7);
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = "#052e16";
+        ctx.strokeStyle = "#0b1220";
         ctx.lineWidth = 1.5;
         ctx.stroke();
       } else {
@@ -179,16 +188,18 @@ export function attachEntityCanvas(
       ctx.restore();
 
       if (
-        showLabels &&
-        (entity.category === "production" ||
-          entity.category === "special" ||
-          entity.label)
+        (showLabels &&
+          (entity.category === "production" ||
+            entity.category === "special" ||
+            entity.category === "player" ||
+            entity.label)) ||
+        (entity.category === "player" && zoom >= -1)
       ) {
         ctx.fillStyle = "#fff7ed";
         ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.globalAlpha = 1;
-        ctx.fillText(entity.label || entity.type, p.x, p.y - h / 2 - 4);
+        ctx.fillText(entity.label || entity.type, p.x, p.y - (entity.category === "player" ? 14 : h / 2 - 4));
       }
       ctx.globalAlpha = 1;
     }
@@ -238,10 +249,10 @@ export function attachEntityCanvas(
         }
         area = 8;
       } else if (entity.category === "resource") {
-        hit = dist <= Math.max(10, metersToPx(7) + pad);
+        hit = dist <= Math.max(18, metersToPx(21) + pad);
         area = 80;
       } else if (entity.category === "player") {
-        hit = dist <= 14;
+        hit = dist <= 16;
         area = 20;
       } else {
         const w = Math.max(14, metersToPx(entity.w) + pad * 2);

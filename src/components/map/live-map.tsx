@@ -178,7 +178,7 @@ export function LiveMap() {
   useEffect(() => {
     let cancelled = false;
     let map: import("leaflet").Map | undefined;
-    let onMove: (() => void) | undefined;
+    let onMouse: ((event: import("leaflet").LeafletMouseEvent) => void) | undefined;
 
     void (async () => {
       const L = await import("leaflet");
@@ -237,12 +237,10 @@ export function LiveMap() {
       canvas.setEntities(entitiesRef.current);
       canvasRef.current = canvas;
 
-      onMove = () => {
-        const center = map!.getCenter();
-        setCursor(latLngToWorld(center.lat, center.lng));
+      onMouse = (event) => {
+        setCursor(latLngToWorld(event.latlng.lat, event.latlng.lng));
       };
-      map.on("move", onMove);
-      onMove();
+      map.on("mousemove", onMouse);
     })();
 
     return () => {
@@ -251,7 +249,7 @@ export function LiveMap() {
       canvasRef.current = null;
       overlaysRef.current = null;
       mapRef.current = null;
-      if (map && onMove) map.off("move", onMove);
+      if (map && onMouse) map.off("mousemove", onMouse);
       map?.remove();
     };
   }, []);
@@ -430,8 +428,8 @@ export function LiveMap() {
         <SidebarResizeHandle edge="left" onDelta={resizeLeft} />
       </aside>
       <div className="relative h-full min-h-0 min-w-0 flex-1">
-        <div ref={containerRef} className="h-full w-full bg-[#0c1c2c]" />
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
+        <div ref={containerRef} className="relative z-0 h-full w-full bg-[#0c1c2c]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3">
           <div className="pointer-events-auto md:hidden">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>
@@ -476,7 +474,7 @@ export function LiveMap() {
             </div>
           </div>
         </div>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2">
           <HistoryTimeline
             serverId={serverId}
             live={historyLive}

@@ -256,6 +256,7 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
 
 export function layerKey(entity: MapEntity): string {
   if (entity.category === "resource") return `res:${entity.resource ?? "unknown"}`;
+  if (entity.category === "player") return `ply:${entity.id}`;
   return `typ:${entity.type}`;
 }
 
@@ -263,6 +264,7 @@ export function layerLabel(entity: MapEntity): string {
   if (entity.category === "resource") {
     return RESOURCE_TYPE_LABELS[entity.resource ?? "unknown"] ?? entity.resource ?? "Unknown";
   }
+  if (entity.category === "player") return entity.label || "Pioneer";
   return prettyType(entity.type);
 }
 

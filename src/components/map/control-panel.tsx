@@ -25,6 +25,14 @@ import {
 import type { PublicUser } from "@/lib/auth/types";
 import { Section } from "@/components/map/section";
 import { WikiIcon } from "@/components/map/wiki-icon";
+import { FolderPicker, nameFromSaveDir } from "@/components/map/folder-picker";
+import {
+  clockFactor,
+  extractorOutputPerMin,
+  formatRate,
+  lookupRecipe,
+  perMinute,
+} from "@/lib/world/recipes";
 
 type Props = {
   status: HubStatus | null;
@@ -213,21 +221,32 @@ export function ControlPanel({
                 <FolderOpen className="size-3.5" />
                 Save folder
               </Label>
-              <Input
-                value={dirDraft ?? current?.savesDir ?? ""}
-                onChange={(event) => setDirDraft(event.target.value)}
-                onBlur={() => {
-                  if (!canEditCatalog) return;
-                  if (dirDraft != null && current && dirDraft !== current.savesDir) {
-                    void onConfig({
-                      updateServer: { id: current.id, savesDir: dirDraft, saveFile: null },
-                    });
-                  }
-                }}
-                placeholder="%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server"
-                className="font-mono text-xs"
-                readOnly={!canEditCatalog}
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={dirDraft ?? current?.savesDir ?? ""}
+                  onChange={(event) => setDirDraft(event.target.value)}
+                  onBlur={() => {
+                    if (!canEditCatalog) return;
+                    if (dirDraft != null && current && dirDraft !== current.savesDir) {
+                      void onConfig({
+                        updateServer: { id: current.id, savesDir: dirDraft, saveFile: null },
+                      });
+                    }
+                  }}
+                  placeholder="%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server"
+                  className="min-w-0 flex-1 font-mono text-xs"
+                  readOnly={!canEditCatalog}
+                />
+                {canEditCatalog ? (
+                  <FolderPicker
+                    onPick={(dir) => {
+                      if (!current) return;
+                      setDirDraft(dir);
+                      void onConfig({ updateServer: { id: current.id, savesDir: dir, saveFile: null } });
+                    }}
+                  />
+                ) : null}
+              </div>
               <p className="text-[11px] text-muted-foreground">
                 Windows dedicated server:{" "}
                 <span className="font-mono">%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server</span>.
@@ -305,12 +324,20 @@ export function ControlPanel({
             onChange={(event) => setAddName(event.target.value)}
             placeholder="Name (e.g. Cluster A)"
           />
-          <Input
-            value={addDir}
-            onChange={(event) => setAddDir(event.target.value)}
-            placeholder="%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server"
-            className="font-mono text-xs"
-          />
+          <div className="flex gap-2">
+            <Input
+              value={addDir}
+              onChange={(event) => setAddDir(event.target.value)}
+              placeholder="%LOCALAPPDATA%\FactoryGame\Saved\SaveGames\server"
+              className="min-w-0 flex-1 font-mono text-xs"
+            />
+            <FolderPicker
+              onPick={(dir) => {
+                setAddDir(dir);
+                setAddName((current) => current.trim() || nameFromSaveDir(dir));
+              }}
+            />
+          </div>
           <Button
             size="sm"
             disabled={busy || !addDir.trim()}
@@ -389,12 +416,13 @@ export function ControlPanel({
             min={zExtent.min}
             max={zExtent.max}
             step={1}
-            minStepsBetweenThumbs={0}
-            value={[zLower, zUpper]}
+            minStepsBetweenThumbs={1}
+            value={[Math.min(zLower, zUpper), Math.max(zLower, zUpper)]}
             onValueChange={(value) => {
               const lo = value[0] ?? zLower;
               const hi = value[1] ?? zUpper;
-              onZRange(Math.min(lo, hi), Math.max(lo, hi));
+              if (lo > hi) return;
+              onZRange(lo, hi);
             }}
           />
           <p className="text-[11px] text-muted-foreground">
@@ -477,6 +505,7 @@ export function ControlPanel({
                 </>
               ) : null}
             </dl>
+            <RecipeRates entity={selected} />
           </Section>
         ) : null}
 
@@ -487,5 +516,50 @@ export function ControlPanel({
         </p>
       </div>
     </ScrollArea>
+  );
+}
+
+function RecipeRates({ entity }: { entity: MapEntity }) {
+  const recipe = lookupRecipe(entity.recipe);
+  const extract = extractorOutputPerMin(entity.type, entity.purity);
+  const factor = clockFactor(entity.clock, entity.somersloops);
+  if (!recipe && extract == null) return null;
+  const rows =
+    recipe != null
+      ? [
+          ...recipe.in.map((item) => ({
+            side: "In",
+            name: item.name,
+            base: perMinute(item.amount, recipe.time),
+          })),
+          ...recipe.out.map((item) => ({
+            side: "Out",
+            name: item.name,
+            base: perMinute(item.amount, recipe.time),
+          })),
+        ]
+      : [
+          {
+            side: "Out",
+            name: entity.resource ? (RESOURCE_TYPE_LABELS[entity.resource] ?? entity.resource) : "Resource",
+            base: extract ?? 0,
+          },
+        ];
+  return (
+    <div className="mt-2 rounded-md border border-border/60 px-2 py-1.5">
+      <p className="mb-1 text-[10px] tracking-wide text-muted-foreground uppercase">
+        Material rates <span className="normal-case">/min at 100% → current</span>
+      </p>
+      <ul className="flex flex-col gap-0.5 font-mono text-[11px]">
+        {rows.map((row) => (
+          <li key={`${row.side}:${row.name}`} className="flex min-w-0 items-baseline gap-2">
+            <span className="w-7 shrink-0 text-muted-foreground">{row.side}</span>
+            <span className="min-w-0 flex-1 truncate text-foreground">{row.name}</span>
+            <span className="shrink-0 text-muted-foreground">{formatRate(row.base)}</span>
+            <span className="shrink-0 text-foreground">→ {formatRate(row.base * factor)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

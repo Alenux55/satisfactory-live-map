@@ -132,6 +132,8 @@
 .leaflet-container {
   background: #0c1c2c;
   font-family: inherit;
+  z-index: 0;
+  isolation: isolate;
 }
 
 .leaflet-bottom {

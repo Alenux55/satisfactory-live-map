@@ -11,7 +11,7 @@ This is **not** a copy of [Satisfactory Calculator / SCIM](https://satisfactory-
 - Configurable poll interval (5s–10m)
 - Skips unchanged saves by size, mtime, then SHA-256
 - After the first snapshot, the UI applies added / updated / removed actors only
-- Records a **change-only history** (diffs + daily keyframes) so you can scrub a UniFi-style timeline and play a timelapse
+- Records a **change-only history** (diffs + daily keyframes) under `data/history/` so you can scrub a UniFi-style timeline and play a timelapse. Rebuilds do **not** wipe this folder.
 - Ships with a **Grass Fields demo factory** that grows on the same interval so you can see live deltas without a save
 - Background: 1.0 in-game map from the [official wiki Map.jpg](https://satisfactory.wiki.gg/wiki/File:Map.jpg) (cached to `data/world-map.jpg`, not committed). Schematic biome grid if the download fails. Not SCIM tiles.
 

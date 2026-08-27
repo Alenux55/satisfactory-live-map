@@ -17,6 +17,7 @@ import { CATEGORY_COLORS } from "@/lib/world/categorize";
 import { RESOURCE_TYPE_LABELS } from "@/lib/world/resource";
 import { DEFAULT_LAYERS, type EntityCategory, type MapEntity } from "@/lib/world/types";
 import { iconCandidatesForResource } from "@/lib/world/icons";
+import { pioneerColor } from "@/lib/world/pioneer-color";
 import { cn } from "@/lib/utils";
 
 type LayerFlags = Record<EntityCategory, boolean>;
@@ -27,6 +28,9 @@ type TypeRow = {
   count: number;
   icons: string[];
   sub: string;
+  claimed?: number;
+  unclaimed?: number;
+  color?: string;
 };
 
 export function LayersPanel({
@@ -60,6 +64,9 @@ export function LayersPanel({
           count: 0,
           icons: layerIcons(entity),
           sub: subcategoryId(entity),
+          claimed: 0,
+          unclaimed: 0,
+          color: entity.category === "player" ? pioneerColor(entity.id) : undefined,
         };
         index.set(key, row);
         const list = byCat.get(entity.category) ?? [];
@@ -67,6 +74,10 @@ export function LayersPanel({
         byCat.set(entity.category, list);
       }
       row.count += 1;
+      if (entity.category === "resource") {
+        if (entity.claimed) row.claimed = (row.claimed ?? 0) + 1;
+        else row.unclaimed = (row.unclaimed ?? 0) + 1;
+      }
     }
     for (const list of byCat.values()) {
       list.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
@@ -169,6 +180,7 @@ export function LayersPanel({
                     onCheckedChange={(on) => setCategory(cat.id, on)}
                   />
                 </div>
+                {rows.length > 1 ? (
                 <div className="flex min-w-0 items-center justify-end gap-0.5">
                   <Button
                     size="xs"
@@ -190,15 +202,17 @@ export function LayersPanel({
                     All off
                   </Button>
                 </div>
+                ) : null}
               </div>
               {expanded ? (
                 <div className="flex min-w-0 flex-col gap-2 border-t border-border/60 px-2 py-2">
                   {cat.id === "resource"
                     ? mergeResourceRows(rows).map((row) => (
-                        <TypeToggle
+                        <ResourceToggle
                           key={row.key}
                           row={row}
-                          checked={!hidden.has(row.key)}
+                          hidden={hidden}
+                          onHidden={(next) => onHiddenTypes(next)}
                           onChecked={(on) => toggleType(row.key, on, cat.id)}
                           onHover={onHover}
                         />
@@ -208,10 +222,11 @@ export function LayersPanel({
                         if (!subRows.length) return null;
                         return (
                           <div key={sub.id} className="min-w-0">
-                            <div className="mb-1 min-w-0">
+                              <div className="mb-1 min-w-0">
                               <p className="truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                                 {sub.label}
                               </p>
+                              {subRows.length > 1 ? (
                               <div className="flex min-w-0 justify-end">
                                 <GroupActions
                                   checked={groupChecked(subRows)}
@@ -220,6 +235,7 @@ export function LayersPanel({
                                   onAllOff={() => groupOff(subRows, cat.id)}
                                 />
                               </div>
+                              ) : null}
                             </div>
                             <div className="flex min-w-0 flex-col gap-1">
                               {subRows.map((row) => (
@@ -325,10 +341,87 @@ function TypeToggle({
       onMouseEnter={() => onHover(row.key)}
       onMouseLeave={() => onHover(null)}
     >
-      <WikiIcon candidates={row.icons} label={row.label} className="size-5 shrink-0" />
+      {row.color ? (
+        <span className="size-5 shrink-0 rounded-sm border border-border/70" style={{ background: row.color }} />
+      ) : (
+        <WikiIcon candidates={row.icons} label={row.label} className="size-5 shrink-0" />
+      )}
       <span className="min-w-0 flex-1 truncate text-[12px]">{row.label}</span>
       <span className={cn("shrink-0 font-mono text-[10px] text-muted-foreground")}>{row.count}</span>
       <Switch size="sm" className="shrink-0" checked={checked} onCheckedChange={onChecked} />
+    </div>
+  );
+}
+
+function ResourceToggle({
+  row,
+  hidden,
+  onHidden,
+  onChecked,
+  onHover,
+}: {
+  row: TypeRow;
+  hidden: Set<string>;
+  onHidden: (hidden: string[]) => void;
+  onChecked: (on: boolean) => void;
+  onHover: (key: string | null) => void;
+}) {
+  const claimedKey = `${row.key}:claimed`;
+  const unclaimedKey = `${row.key}:unclaimed`;
+  const claimedOnly = hidden.has(unclaimedKey) && !hidden.has(claimedKey);
+  const unclaimedOnly = hidden.has(claimedKey) && !hidden.has(unclaimedKey);
+  const mode = claimedOnly ? "claimed" : unclaimedOnly ? "unclaimed" : "all";
+
+  const setMode = (next: "all" | "claimed" | "unclaimed") => {
+    const values = new Set(hidden);
+    values.delete(claimedKey);
+    values.delete(unclaimedKey);
+    if (next === "claimed") values.add(unclaimedKey);
+    if (next === "unclaimed") values.add(claimedKey);
+    if (next !== "all") values.delete(row.key);
+    onHidden([...values]);
+  };
+
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 rounded-md px-1 py-0.5 hover:bg-muted/60">
+      <div className="flex min-w-0 items-center gap-2">
+        <span
+          className="flex min-w-0 flex-1 items-center gap-2"
+          onMouseEnter={() => onHover(row.key)}
+          onMouseLeave={() => onHover(null)}
+        >
+          <WikiIcon candidates={row.icons} label={row.label} className="size-5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-[12px]">{row.label}</span>
+        </span>
+        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{row.count}</span>
+        <Switch size="sm" className="shrink-0" checked={!hidden.has(row.key)} onCheckedChange={onChecked} />
+      </div>
+      <div className="flex flex-wrap items-center gap-1 pl-7">
+        <button
+          type="button"
+          className={cn(
+            "rounded px-1 py-0.5 font-mono text-[10px]",
+            mode === "claimed" ? "bg-primary/20 text-foreground" : "text-muted-foreground hover:bg-muted",
+          )}
+          onMouseEnter={() => onHover(claimedKey)}
+          onMouseLeave={() => onHover(null)}
+          onClick={() => setMode(mode === "claimed" ? "all" : "claimed")}
+        >
+          claimed {row.claimed ?? 0}
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "rounded px-1 py-0.5 font-mono text-[10px]",
+            mode === "unclaimed" ? "bg-primary/20 text-foreground" : "text-muted-foreground hover:bg-muted",
+          )}
+          onMouseEnter={() => onHover(unclaimedKey)}
+          onMouseLeave={() => onHover(null)}
+          onClick={() => setMode(mode === "unclaimed" ? "all" : "unclaimed")}
+        >
+          open {row.unclaimed ?? 0}
+        </button>
+      </div>
     </div>
   );
 }
