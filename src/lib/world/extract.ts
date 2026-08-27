@@ -8,10 +8,14 @@ import {
 } from "@etothepii/satisfactory-file-parser";
 import { categorize, footprintFor, prettyType, shortType } from "./categorize";
 import { cmToMeters, yawFromQuaternion } from "./coords";
-import { logger } from "@/lib/log";
 import { parsePurity, resourceKind, RESOURCE_TYPE_LABELS } from "./resource";
 import { applyVanillaNodeCatalog } from "./vanilla-nodes";
 import type { MapEntity, Point, SaveHeaderInfo } from "./types";
+
+function debugLog(message: string, extra: Record<string, unknown>): void {
+  if ((process.env.FICSIT_LOG ?? "info").toLowerCase() !== "debug") return;
+  console.log(`[parse] ${message} ${JSON.stringify(extra)}`);
+}
 
 type SaveObjectLike = SaveEntity | SaveComponent;
 
@@ -315,7 +319,7 @@ function extractResourceNode(obj: SaveEntity, byName: Map<string, SaveObjectLike
   if (kind === "unknown") {
     unknownNodeSamples += 1;
     if (unknownNodeSamples <= 8) {
-      logger.debug("resource node unclassified", {
+      debugLog("resource node unclassified", {
         typePath,
         instance: obj.instanceName,
         props: Object.keys(obj.properties ?? {}),
