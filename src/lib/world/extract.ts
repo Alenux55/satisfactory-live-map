@@ -6,7 +6,7 @@ import {
   type SaveComponent,
   type SaveEntity,
 } from "@etothepii/satisfactory-file-parser";
-import { categorize, footprintFor, prettyType, shortType } from "./categorize";
+import { categorize, displayName, footprintFor, shortType } from "./categorize";
 import { cmToMeters, yawFromQuaternion } from "./coords";
 import { parsePurity, resourceKind, RESOURCE_TYPE_LABELS } from "./resource";
 import { applyVanillaNodeCatalog } from "./vanilla-nodes";
@@ -23,7 +23,7 @@ const NODE_CLAIM_RADIUS_M = 28;
 let unknownNodeSamples = 0;
 
 const INCLUDE =
-  /Buildable|Char_Player|Vehicle|Explorer|Tractor|Truck|CyberWagon|FactoryCart|ConveyorChain|LightweightBuildable|PipeHyper|JumpPad|Locomotive|FreightWagon|GolfCart|GolfCart/i;
+  /Buildable|Char_Player|Vehicle|Explorer|Tractor|Truck|CyberWagon|FactoryCart|ConveyorChain|LightweightBuildable|PipeHyper|JumpPad|Locomotive|FreightWagon|GolfCart|BP_Crate|DeathCrate/i;
 const EXCLUDE = /Pickup_|Creature_|Enemy|Wildlife|Foliage|Audio|Lightmass|HUD|CheatManager|Camera/i;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -120,7 +120,7 @@ function arrayValues(raw: unknown): unknown[] {
 function recipeFrom(entity: SaveEntity): string | undefined {
   const path = pathNameOf(propValue(entity, "mCurrentRecipe"));
   if (!path) return undefined;
-  return prettyType(shortType(path).replace(/^Recipe_/, ""));
+  return displayName(shortType(path).replace(/^Recipe_/, ""));
 }
 
 function playerName(entity: SaveEntity): string | undefined {
@@ -316,6 +316,19 @@ function boolish(value: unknown): boolean | undefined {
   const rec = asRecord(value);
   if (rec && "value" in rec) return boolish(rec.value);
   return undefined;
+}
+
+function isDeathCrate(obj: SaveEntity): boolean {
+  if (/DeathCrate/i.test(obj.typePath) || /DeathCrate/i.test(obj.instanceName || "")) return true;
+  const typeVal = propValue(obj, "mCrateType") ?? propValue(obj, "CrateType");
+  const numeric = unwrapNum(typeVal);
+  if (numeric === 1) return true;
+  const strings: string[] = [];
+  harvestStrings(typeVal, strings);
+  harvestStrings(obj.components, strings);
+  harvestStrings(propValue(obj, "mActorRepresentation"), strings);
+  harvestStrings(propValue(obj, "mCompassTexture"), strings);
+  return /DeathCrate|CT_Death|CrateType_Death|Death_Crate/i.test(strings.join(" "));
 }
 
 function shouldKeep(typePath: string): boolean {
@@ -557,6 +570,11 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
         const path = splineFromProperties(obj);
         if (path) extras.path = path;
         if (/Char_Player/i.test(obj.typePath) && !extras.label) extras.label = "Pioneer";
+        if (categorize(obj.typePath) === "crates") {
+          const death = isDeathCrate(obj);
+          extras.type = death ? "DeathCrate" : "Crate";
+          extras.label = death ? "Death Crate" : "Dismantle Crate";
+        }
         const id = obj.instanceName || `${obj.typePath}:${translation.x}:${translation.y}`;
         if (seen.has(id)) continue;
         seen.add(id);

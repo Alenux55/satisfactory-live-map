@@ -1,6 +1,6 @@
 import type { EntityCategory, MapEntity } from "./types";
 import { RESOURCE_TYPE_LABELS } from "./resource";
-import { prettyType } from "./categorize";
+import { displayName } from "./categorize";
 import { iconCandidatesForBuilding, iconCandidatesForResource } from "./icons";
 
 export type BuilderSubcategory = {
@@ -153,7 +153,7 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "utility",
         label: "3. Access & utility",
-        test: anyOf(/Lookout|Crate|Shelf|DimensionalDepot|CentralStorage/i),
+        test: anyOf(/Lookout|Shelf|DimensionalDepot|CentralStorage/i),
       },
     ],
   },
@@ -260,6 +260,15 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
     subs: [{ id: "pioneers", label: "Pioneers", test: () => true }],
   },
   {
+    id: "crates",
+    label: "Crates",
+    extra: true,
+    subs: [
+      { id: "dismantle", label: "Dismantle Crates", test: (p, s) => /Crate/i.test(p + s) && !/Death/i.test(p + s) },
+      { id: "death", label: "Death Crates", test: anyOf(/DeathCrate|Death/i) },
+    ],
+  },
+  {
     id: "other",
     label: "Other",
     extra: true,
@@ -278,7 +287,10 @@ export function layerLabel(entity: MapEntity): string {
     return RESOURCE_TYPE_LABELS[entity.resource ?? "unknown"] ?? entity.resource ?? "Unknown";
   }
   if (entity.category === "player") return entity.label || "Pioneer";
-  return prettyType(entity.type);
+  if (entity.category === "crates") {
+    return /death/i.test(entity.type) ? "Death Crate" : "Dismantle Crate";
+  }
+  return displayName(entity.type);
 }
 
 export function layerIcons(entity: MapEntity): string[] {

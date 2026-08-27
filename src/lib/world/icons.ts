@@ -1,4 +1,4 @@
-import { prettyType } from "./categorize";
+import { displayName, prettyType } from "./categorize";
 
 export const RESOURCE_ICON_FILES: Record<string, string[]> = {
   iron: ["Iron_Ore.png"],
@@ -21,6 +21,9 @@ export const RESOURCE_ICON_FILES: Record<string, string[]> = {
 /** Wiki.gg File: names that don't follow `{Pretty}_{Mk.N}` from the save type. */
 const BUILDING_ICON_ALIASES: Record<string, string[]> = {
   AlienPowerAugmenter: ["Alien_Power_Augmenter.png"],
+  AlienPowerBuilding: ["Alien_Power_Augmenter.png"],
+  Crate: ["Crate.png"],
+  DeathCrate: ["Death_Crate.png", "Crate.png"],
   AwesomeSink: ["AWESOME_Sink.png"],
   AwesomeShop: ["AWESOME_Shop.png"],
   BlueprintDesigner: ["Blueprint_Designer.png"],
@@ -117,6 +120,8 @@ export function iconCandidatesForBuilding(type: string): string[] {
   }
 
   push(pretty);
+  const official = displayName(type);
+  if (official !== pretty) push(official);
   const stripped = pretty.replace(/\s+\d+$/, "").replace(/\s+\d+x\d+\s*/i, " ").trim();
   if (stripped !== pretty) push(stripped);
 

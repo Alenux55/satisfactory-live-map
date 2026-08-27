@@ -1,4 +1,7 @@
 import type { EntityCategory } from "./types";
+import docsNames from "./docs-names.json";
+
+const DOCS_NAMES = docsNames as Record<string, string>;
 
 export const CATEGORY_COLORS: Record<EntityCategory, string> = {
   special: "#f472b6",
@@ -12,6 +15,7 @@ export const CATEGORY_COLORS: Record<EntityCategory, string> = {
   transport: "#a78bfa",
   resource: "#6f505d",
   player: "#4ade80",
+  crates: "#f59e0b",
   other: "#94a3b8",
 };
 
@@ -42,6 +46,7 @@ const SIZE_RULES: [RegExp, Size][] = [
   [/ResourceNode|FrackingSatellite|FrackingCore|Geyser/i, { w: 10, h: 10 }],
   [/Char_Player|Player/i, { w: 2, h: 2 }],
   [/Tractor|Truck|Explorer|CyberWagon|FactoryCart/i, { w: 8, h: 12 }],
+  [/Crate/i, { w: 3, h: 3 }],
 ];
 
 export function shortType(typePath: string): string {
@@ -59,6 +64,7 @@ export function shortType(typePath: string): string {
 export function categorize(typePath: string): EntityCategory {
   const p = typePath;
   if (/Char_Player|PlayerState/i.test(p)) return "player";
+  if (/BP_Crate|DeathCrate|\/Crate\/|\bCrate\b/i.test(p) && !/Storage/i.test(p)) return "crates";
   if (/ResourceNode|FrackingSatellite|FrackingCore|Geyser/i.test(p) && !/Miner|Extractor|Pump|Generator/i.test(p)) {
     return "resource";
   }
@@ -103,7 +109,7 @@ export function categorize(typePath: string): EntityCategory {
   if (/Wall|Door|Window|Gate/i.test(p) && !/Outlet|Power/i.test(p)) return "walls";
   if (/Roof|Walkway|Stair|Pillar|Beam|Frame|Catwalk|Fence|Railing|Barrier|Ladder|Fan|Vent/i.test(p)) return "architecture";
   if (
-    /Lookout|Sign|Billboard|Label|Floodlight|StreetLight|CeilingLight|Light|Crate|Shelf|DimensionalDepot|CentralStorage/i.test(
+    /Lookout|Sign|Billboard|Label|Floodlight|StreetLight|CeilingLight|Light|Shelf|DimensionalDepot|CentralStorage/i.test(
       p,
     )
   ) {
@@ -129,4 +135,12 @@ export function prettyType(type: string): string {
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/_/g, " ")
     .trim();
+}
+
+export function displayName(type: string): string {
+  const tidy = (value: string) => value.replace(/[\u00A0\u202F\u2007\u2009]/g, " ").replace(/\s+/g, " ").trim();
+  if (DOCS_NAMES[type]) return tidy(DOCS_NAMES[type]);
+  const mk1 = type.replace(/Mk\d+$/i, "Mk1");
+  if (mk1 !== type && DOCS_NAMES[mk1]) return tidy(DOCS_NAMES[mk1]);
+  return prettyType(type);
 }

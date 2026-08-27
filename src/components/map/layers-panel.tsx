@@ -16,7 +16,7 @@ import {
 import { CATEGORY_COLORS } from "@/lib/world/categorize";
 import { RESOURCE_TYPE_LABELS } from "@/lib/world/resource";
 import { DEFAULT_LAYERS, type EntityCategory, type MapEntity } from "@/lib/world/types";
-import { iconCandidatesForResource } from "@/lib/world/icons";
+import { iconCandidatesForBuilding, iconCandidatesForResource } from "@/lib/world/icons";
 import { pioneerColor } from "@/lib/world/pioneer-color";
 import { cn } from "@/lib/utils";
 
@@ -233,7 +233,8 @@ export function LayersPanel({
                         />
                       ))
                     : (subs.length ? subs : cat.subs).map((sub) => {
-                        const subRows = rows.filter((row) => row.sub === sub.id);
+                        const source = cat.id === "crates" ? mergeCrateRows(rows) : rows;
+                        const subRows = source.filter((row) => row.sub === sub.id);
                         if (!subRows.length) return null;
                         return (
                           <div key={sub.id} className="min-w-0">
@@ -315,6 +316,26 @@ function mergeResourceRows(rows: TypeRow[]): TypeRow[] {
   const unknown = byKey.get("res:unknown");
   if (unknown && unknown.count > 0) listed.push(unknown);
   return listed;
+}
+
+function mergeCrateRows(rows: TypeRow[]): TypeRow[] {
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  return [
+    {
+      key: "typ:Crate",
+      label: "Dismantle Crate",
+      count: 0,
+      icons: iconCandidatesForBuilding("Crate"),
+      sub: "dismantle",
+    },
+    {
+      key: "typ:DeathCrate",
+      label: "Death Crate",
+      count: 0,
+      icons: iconCandidatesForBuilding("DeathCrate"),
+      sub: "death",
+    },
+  ].map((row) => byKey.get(row.key) ?? row);
 }
 
 function leftoverRows(rows: TypeRow[], subs: { id: string }[]): TypeRow[] {

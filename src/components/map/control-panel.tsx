@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
-import { prettyType } from "@/lib/world/categorize";
+import { displayName } from "@/lib/world/categorize";
 import { formatBytes, formatDuration, formatInterval } from "@/lib/world/coords";
 import { RESOURCE_TYPE_LABELS } from "@/lib/world/resource";
 import { layerIcons, layerLabel } from "@/lib/world/builder-menu";
@@ -441,13 +441,13 @@ export function ControlPanel({
                 className="size-14 rounded-md border border-border bg-card p-1"
               />
               <div className="min-w-0 flex-1">
-                <p className="font-heading text-sm">{selected.label || prettyType(selected.type)}</p>
+                <p className="font-heading text-sm">{selected.label || displayName(selected.type)}</p>
                 <p className="text-[11px] text-muted-foreground">{CATEGORY_LABELS[selected.category]}</p>
               </div>
             </div>
             <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
               <dt>Type</dt>
-              <dd className="text-foreground">{prettyType(selected.type)}</dd>
+              <dd className="text-foreground">{displayName(selected.type)}</dd>
               <dt>X / Y</dt>
               <dd className="text-foreground">
                 {selected.x.toFixed(1)}, {selected.y.toFixed(1)}

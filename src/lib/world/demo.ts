@@ -91,6 +91,14 @@ export function buildDemoWorld(tick: number): MapEntity[] {
       id: "demo:player",
       label: "Pioneer",
     }),
+    machine("Crate", "crates", OX + 28, OY - 18, 0, 3, 3, {
+      id: "demo:crate:dismantle",
+      label: "Dismantle Crate",
+    }),
+    machine("DeathCrate", "crates", OX - 16, OY - 32, 40, 3, 3, {
+      id: "demo:crate:death",
+      label: "Death Crate",
+    }),
   );
 
   const foundationCount = Math.min(96, 24 + t * 4);

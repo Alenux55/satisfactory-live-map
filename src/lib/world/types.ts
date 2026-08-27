@@ -37,6 +37,7 @@ export type EntityCategory =
   | "transport"
   | "resource"
   | "player"
+  | "crates"
   | "other";
 
 export type Point = [number, number];
@@ -186,6 +187,7 @@ export const EMPTY_COUNTS: CategoryCounts = {
   transport: 0,
   resource: 0,
   player: 0,
+  crates: 0,
   other: 0,
 };
 
@@ -201,6 +203,7 @@ export const CATEGORY_LABELS: Record<EntityCategory, string> = {
   transport: "Vehicles",
   resource: "Resource nodes",
   player: "Pioneers",
+  crates: "Crates",
   other: "Other",
 };
 
@@ -216,5 +219,6 @@ export const DEFAULT_LAYERS: Record<EntityCategory, boolean> = {
   transport: true,
   resource: true,
   player: true,
+  crates: true,
   other: false,
 };
