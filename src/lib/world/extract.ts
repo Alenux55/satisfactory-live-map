@@ -435,7 +435,7 @@ function extractLightweight(obj: SaveEntity, into: MapEntity[]): void {
   const special = asRecord(obj.specialProperties);
   if (!special || special.type !== "BuildableSubsystemSpecialProperties") return;
   const groups = Array.isArray(special.buildables) ? special.buildables : [];
-  let index = 0;
+  const used = new Map<string, number>();
   for (const group of groups) {
     const g = asRecord(group);
     if (!g) continue;
@@ -446,9 +446,13 @@ function extractLightweight(obj: SaveEntity, into: MapEntity[]): void {
       const transform = asRecord(inst?.transform);
       const translation = readVec3(transform?.translation);
       if (!translation) continue;
-      const id = `lw:${shortType(typePath)}:${Math.round(translation.x)}:${Math.round(translation.y)}:${Math.round(translation.z)}:${index}`;
-      into.push(fromTransform(id, typePath, translation, readQuat(transform?.rotation)));
-      index += 1;
+      const rotation = readQuat(transform?.rotation);
+      const yaw = rotation ? Math.round(yawFromQuaternion(rotation)) : 0;
+      const stem = `lw:${shortType(typePath)}:${Math.round(translation.x)}:${Math.round(translation.y)}:${Math.round(translation.z)}:${yaw}`;
+      const n = used.get(stem) ?? 0;
+      used.set(stem, n + 1);
+      const id = n === 0 ? stem : `${stem}:${n}`;
+      into.push(fromTransform(id, typePath, translation, rotation));
     }
   }
 }

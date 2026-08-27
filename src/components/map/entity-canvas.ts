@@ -95,12 +95,20 @@ export function attachEntityCanvas(
     const scale = map.getZoomScale(zoom, 0);
     const metersToPx = (meters: number) => Math.max(2, meters * scale * 0.45);
 
+    const rest: MapEntity[] = [];
+    const resources: MapEntity[] = [];
+    const players: MapEntity[] = [];
     for (const entity of entities.values()) {
       if (!visible(entity)) continue;
       if ((entity.category === "foundations" || entity.category === "walls" || entity.category === "architecture") && !showOrg) {
         continue;
       }
+      if (entity.category === "player") players.push(entity);
+      else if (entity.category === "resource") resources.push(entity);
+      else rest.push(entity);
+    }
 
+    for (const entity of [...rest, ...resources, ...players]) {
       const key = layerKey(entity);
       const claimKey =
         entity.category === "resource" ? (entity.claimed ? `${key}:claimed` : `${key}:unclaimed`) : null;
@@ -246,6 +254,13 @@ export function attachEntityCanvas(
   const isStructure = (entity: MapEntity) =>
     entity.category === "foundations" || entity.category === "walls" || entity.category === "architecture";
 
+  const pickRank = (entity: MapEntity) => {
+    if (entity.category === "player") return 3;
+    if (entity.category === "resource") return 2;
+    if (isStructure(entity)) return 0;
+    return 1;
+  };
+
   const pick = (event: LeafletMouseEvent): MapEntity | null => {
     const click = event.containerPoint;
     const zoom = map.getZoom();
@@ -291,13 +306,13 @@ export function attachEntityCanvas(
       }
       if (!hit) continue;
 
+      const rank = pickRank(entity);
+      const bestRank = best ? pickRank(best.entity) : -1;
       if (
         !best ||
-        (isStructure(best.entity) && !isStructure(entity)) ||
-        (isStructure(entity) === isStructure(best.entity) &&
-          (area < best.area * 0.85 || (area <= best.area && dist < best.dist)))
+        rank > bestRank ||
+        (rank === bestRank && (area < best.area * 0.85 || (area <= best.area && dist < best.dist)))
       ) {
-        if (best && isStructure(entity) && !isStructure(best.entity)) continue;
         best = { entity, dist, area };
       }
     }

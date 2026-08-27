@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { logger } from "@/lib/log";
 import { DEFAULT_SAVES_DIR, WorldHub } from "./hub";
-import { findOrphanHistoryId, mergeHistoryInto, peekHistoryIdentity, reclaimHistoryForServers } from "./history";
+import { findOrphanHistoryId, mergeHistoryInto, peekHistoryIdentity, pruneAllHistoryKeyframes, reclaimHistoryForServers } from "./history";
 import { peekNewestSaveHeader } from "./save-header";
 import { normalizeFsPath, sameFsPath } from "./save-io";
 import {
@@ -124,7 +124,10 @@ function applyEnvOverlay(config: HubConfig): HubConfig {
       const sameDir = findWatchByDir(next.servers, savesDir);
       if (sameDir && saveFile) {
         sameDir.saveFile = saveFile;
-      } else if (!findWatchByDir(next.servers, savesDir)) {
+      } else if (
+        !findWatchByDir(next.servers, savesDir) &&
+        !next.servers.some((server) => server.kind === "watch")
+      ) {
         next.servers.push({
           id: next.servers.some((server) => server.id === "dedicated") ? stableServerId(savesDir) : "dedicated",
           name: "Dedicated server",
@@ -345,6 +348,8 @@ export class HubRegistry {
       logger.info("collapsed duplicate save folders in catalog", { collapsed });
     }
     await this.reclaimOrphanHistory();
+    const pruned = await pruneAllHistoryKeyframes();
+    if (pruned > 0) logger.info("pruned extra history keyframes", { pruned });
     await this.persist();
     logger.info("server catalog loaded", {
       poll: this.config.pollIntervalSeconds,

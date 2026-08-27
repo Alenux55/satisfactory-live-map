@@ -7,8 +7,10 @@ import { DEMO_SERVER_ID, type HistoryEvent, type HistoryMark, type HistoryMeta, 
 
 const HISTORY_DIR = path.join(process.cwd(), "data", "history");
 const DAY_MS = 24 * 60 * 60 * 1000;
-const KEYFRAME_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const KEYFRAME_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const KEYFRAME_MAX_EVENTS = 400;
+/** Keep the first baseline plus the newest snapshot; drop copies in between. */
+const KEYFRAME_KEEP_TAIL = 1;
 
 export type HistoryIdentity = {
   saveIdentifier?: string;
@@ -127,6 +129,103 @@ async function writeMeta(serverId: string, meta: StoredMeta): Promise<void> {
   await fs.rename(tmp, metaPath(serverId));
 }
 
+async function writeMetaAt(dir: string, meta: StoredMeta): Promise<void> {
+  await fs.mkdir(dir, { recursive: true });
+  const dest = path.join(dir, "meta.json");
+  const tmp = `${dest}.tmp`;
+  await fs.writeFile(tmp, `${JSON.stringify(meta)}\n`);
+  await fs.rename(tmp, dest);
+}
+
+async function pruneKeyframesInDir(dir: string, logId: string): Promise<number> {
+  let names: string[] = [];
+  try {
+    names = await fs.readdir(dir);
+  } catch {
+    return 0;
+  }
+  const keys = names
+    .map((name) => {
+      const match = /^key-(\d+)\.json$/.exec(name);
+      return match ? { t: Number(match[1]), file: name } : null;
+    })
+    .filter((entry): entry is { t: number; file: string } => entry != null)
+    .sort((a, b) => a.t - b.t);
+  const keepCount = Math.min(keys.length, 1 + KEYFRAME_KEEP_TAIL);
+  if (keys.length <= keepCount) return 0;
+  const keep = new Set<string>([keys[0].file]);
+  for (const frame of keys.slice(-KEYFRAME_KEEP_TAIL)) keep.add(frame.file);
+  let removed = 0;
+  let freed = 0;
+  for (const frame of keys) {
+    if (keep.has(frame.file)) continue;
+    const full = path.join(dir, frame.file);
+    try {
+      freed += (await fs.stat(full)).size;
+      await fs.unlink(full);
+      removed += 1;
+    } catch {
+      // already gone
+    }
+  }
+  if (removed === 0) return 0;
+  const remaining = keys.filter((frame) => keep.has(frame.file));
+  try {
+    const raw = await fs.readFile(path.join(dir, "meta.json"), "utf8");
+    const meta = { ...emptyMeta(), ...(JSON.parse(raw) as StoredMeta) };
+    meta.keyframes = remaining;
+    meta.keyframeCount = remaining.length;
+    meta.lastKeyframeT = remaining[remaining.length - 1]?.t ?? null;
+    meta.bytes = Math.max(0, (meta.bytes ?? 0) - freed);
+    await writeMetaAt(dir, meta);
+  } catch {
+    // meta rewrite is best-effort; files are already gone
+  }
+  logger.info("history keyframes pruned", {
+    id: logId,
+    removed,
+    kept: remaining.length,
+    freedMb: Number((freed / (1024 * 1024)).toFixed(1)),
+  });
+  return removed;
+}
+
+async function findMetaDirs(root: string): Promise<string[]> {
+  const found: string[] = [];
+  let names: string[] = [];
+  try {
+    names = await fs.readdir(root);
+  } catch {
+    return found;
+  }
+  for (const name of names) {
+    if (name === DEMO_SERVER_ID) continue;
+    const full = path.join(root, name);
+    let stat;
+    try {
+      stat = await fs.stat(full);
+    } catch {
+      continue;
+    }
+    if (!stat.isDirectory()) continue;
+    try {
+      await fs.access(path.join(full, "meta.json"));
+      found.push(full);
+    } catch {
+      found.push(...(await findMetaDirs(full)));
+    }
+  }
+  return found;
+}
+
+export async function pruneAllHistoryKeyframes(): Promise<number> {
+  let total = 0;
+  for (const dir of await findMetaDirs(HISTORY_DIR)) {
+    total += await pruneKeyframesInDir(dir, path.relative(HISTORY_DIR, dir));
+  }
+  return total;
+}
+
 function enqueue(serverId: string, work: () => Promise<void>): void {
   const prev = queues.get(serverId) ?? Promise.resolve();
   const next = prev.then(work).catch((error) => {
@@ -138,9 +237,8 @@ function enqueue(serverId: string, work: () => Promise<void>): void {
   queues.set(serverId, next);
 }
 
-function needKeyframe(meta: StoredMeta, t: number, fromRev: number): boolean {
-  if (fromRev === 0 || meta.lastKeyframeT == null) return true;
-  if (dayKey(t) !== dayKey(meta.lastKeyframeT)) return true;
+function needKeyframe(meta: StoredMeta, t: number): boolean {
+  if (meta.lastKeyframeT == null) return true;
   if (t - meta.lastKeyframeT >= KEYFRAME_MAX_AGE_MS) return true;
   return meta.eventsSinceKeyframe >= KEYFRAME_MAX_EVENTS;
 }
@@ -151,7 +249,10 @@ export function persistHistory(input: PersistInput): void {
 
 async function persistHistoryNow(input: PersistInput): Promise<void> {
   const meta = await readMeta(input.serverId);
-  const writeKey = needKeyframe(meta, input.t, input.fromRev);
+  if (input.fromRev === 0 && meta.lastKeyframeT != null) {
+    return;
+  }
+  const writeKey = needKeyframe(meta, input.t);
   const event: HistoryEvent = {
     t: input.t,
     rev: input.rev,
@@ -174,7 +275,6 @@ async function persistHistoryNow(input: PersistInput): Promise<void> {
     meta.eventsSinceKeyframe = 0;
     meta.keyframeCount += 1;
     meta.keyframes.push({ t: input.t, file });
-    if (meta.keyframes.length > 400) meta.keyframes = meta.keyframes.slice(-200);
   } else {
     meta.eventsSinceKeyframe += 1;
   }
@@ -189,6 +289,7 @@ async function persistHistoryNow(input: PersistInput): Promise<void> {
     savesDir: input.savesDir,
   });
   await writeMeta(input.serverId, meta);
+  if (writeKey) await pruneKeyframesInDir(dirFor(input.serverId), input.serverId);
   logger.info("history recorded", {
     serverId: input.serverId,
     rev: input.rev,
@@ -534,7 +635,10 @@ export async function mergeHistoryInto(keeperId: string, sourceIds: string[]): P
     logger.info("history folders merged", { keeperId, sourceId });
     await rebuildMetaFromDisk(keeperId, mergeIdentity(keeperIdentity, sourceIdentity));
   }
-  if (merged > 0) await rebuildMetaFromDisk(keeperId, keeperIdentity);
+  if (merged > 0) {
+    await rebuildMetaFromDisk(keeperId, keeperIdentity);
+    await pruneKeyframesInDir(dirFor(keeperId), keeperId);
+  }
   return merged;
 }
 
