@@ -61,6 +61,9 @@ function coercePrefs(raw: unknown): UserPrefs {
     hiddenTypes: Array.isArray(rec.hiddenTypes)
       ? rec.hiddenTypes.filter((value): value is string => typeof value === "string")
       : [],
+    hiddenSubs: Array.isArray(rec.hiddenSubs)
+      ? rec.hiddenSubs.filter((value): value is string => typeof value === "string")
+      : [],
     leftWidth: clampSidebarWidth(Number(rec.leftWidth), DEFAULT_LEFT_WIDTH),
     rightWidth: clampSidebarWidth(Number(rec.rightWidth), DEFAULT_RIGHT_WIDTH),
   };

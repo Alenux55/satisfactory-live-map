@@ -8,6 +8,7 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const ICON_DIR = path.join(DATA_DIR, "icons");
 const WIKI_FILE = "https://satisfactory.wiki.gg/wiki/Special:FilePath/";
 const inflight = new Map<string, Promise<Buffer | null>>();
+const missing = new Set<string>();
 
 export function safeIconFile(raw: string): string | null {
   let name = raw.trim().replace(/\\/g, "/").split("/").pop() ?? "";
@@ -17,7 +18,7 @@ export function safeIconFile(raw: string): string | null {
     // already decoded
   }
   const normalized = name.replace(/\s+/g, "_");
-  if (!/^[A-Za-z0-9._-]+\.(png|jpg|jpeg|webp|svg)$/i.test(normalized)) return null;
+  if (!/^[A-Za-z0-9._() +-]+\.(png|jpg|jpeg|webp|svg)$/i.test(normalized)) return null;
   return normalized;
 }
 
@@ -26,6 +27,7 @@ function cachePath(file: string): string {
 }
 
 async function downloadWikiIcon(file: string): Promise<Buffer | null> {
+  if (missing.has(file)) return null;
   const url = `${WIKI_FILE}${encodeURIComponent(file)}`;
   logger.debug("wiki icon download", { file });
   const response = await fetch(url, {
@@ -36,13 +38,20 @@ async function downloadWikiIcon(file: string): Promise<Buffer | null> {
     },
   });
   if (!response.ok) {
+    missing.add(file);
     logger.debug("wiki icon missing", { file, status: response.status });
     return null;
   }
   const type = response.headers.get("content-type") ?? "";
-  if (type.includes("text/html")) return null;
+  if (type.includes("text/html")) {
+    missing.add(file);
+    return null;
+  }
   const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength < 80 || bytes.byteLength > 2_000_000) return null;
+  if (bytes.byteLength < 80 || bytes.byteLength > 2_000_000) {
+    missing.add(file);
+    return null;
+  }
   await mkdir(ICON_DIR, { recursive: true });
   await writeFile(cachePath(file), bytes);
   return bytes;

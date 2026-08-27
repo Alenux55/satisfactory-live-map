@@ -1,9 +1,9 @@
-import type { Map as LeafletMap, LeafletMouseEvent } from "leaflet";
+import type { LatLng, Map as LeafletMap, LeafletMouseEvent, Point, ZoomAnimEvent } from "leaflet";
 import type { EntityCategory, MapEntity } from "@/lib/world/types";
 import { CATEGORY_COLORS } from "@/lib/world/categorize";
 import { worldToLatLng } from "@/lib/world/coords";
 import { PURITY_COLORS } from "@/lib/world/resource";
-import { layerIcons, layerKey } from "@/lib/world/builder-menu";
+import { layerIcons, layerKey, subcategoryId } from "@/lib/world/builder-menu";
 import { iconSrc } from "@/lib/world/icons";
 import { pioneerColor } from "@/lib/world/pioneer-color";
 
@@ -13,6 +13,7 @@ export type EntityCanvasHandle = {
   setEntities: (entities: Map<string, MapEntity>) => void;
   setLayers: (layers: LayerFlags) => void;
   setHiddenTypes: (hidden: Iterable<string>) => void;
+  setHiddenSubs: (hidden: Iterable<string>) => void;
   setHighlight: (key: string | null) => void;
   setZRange: (range: { min: number; max: number } | null) => void;
   setSelected: (id: string | null) => void;
@@ -54,7 +55,7 @@ export function attachEntityCanvas(
   map: LeafletMap,
   onSelect: (entity: MapEntity | null) => void,
 ): EntityCanvasHandle {
-  const canvas = L.DomUtil.create("canvas", "satisfactory-entity-canvas") as HTMLCanvasElement;
+  const canvas = L.DomUtil.create("canvas", "satisfactory-entity-canvas leaflet-zoom-animated") as HTMLCanvasElement;
   canvas.style.pointerEvents = "none";
   const ctx = canvas.getContext("2d")!;
   map.getPanes().overlayPane.appendChild(canvas);
@@ -62,13 +63,18 @@ export function attachEntityCanvas(
   let entities = new Map<string, MapEntity>();
   let layers: LayerFlags | null = null;
   let hidden = new Set<string>();
+  let hiddenSubs = new Set<string>();
   let highlight: string | null = null;
+  let drawnZoom = map.getZoom();
+  let drawnCenter = map.getCenter();
+  let zooming = false;
   let zRange: { min: number; max: number } | null = null;
   let selectedId: string | null = null;
   let destroyed = false;
 
   const visible = (entity: MapEntity) => {
     if (layers && !layers[entity.category]) return false;
+    if (hiddenSubs.has(`${entity.category}:${subcategoryId(entity)}`)) return false;
     const key = layerKey(entity);
     if (hidden.has(key)) return false;
     if (entity.category === "resource") {
@@ -166,7 +172,8 @@ export function attachEntityCanvas(
       ctx.translate(p.x, p.y);
       ctx.rotate((entity.yaw * Math.PI) / 180);
       ctx.fillStyle = entity.category === "player" ? pioneerColor(entity.id) : CATEGORY_COLORS[entity.category];
-      ctx.globalAlpha *= entity.category === "foundations" || entity.category === "walls" || entity.category === "architecture" ? 0.28 : 0.94;
+      ctx.globalAlpha *=
+        entity.category === "foundations" ? 0.78 : entity.category === "walls" || entity.category === "architecture" ? 0.42 : 0.94;
       if (entity.category === "player") {
         ctx.beginPath();
         ctx.moveTo(0, -10);
@@ -179,6 +186,11 @@ export function attachEntityCanvas(
         ctx.stroke();
       } else {
         ctx.fillRect(-w / 2, -h / 2, w, h);
+        if (entity.category === "foundations") {
+          ctx.strokeStyle = "#f6e7c1";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-w / 2, -h / 2, w, h);
+        }
         if (entity.id === selectedId || isHi) {
           ctx.strokeStyle = "#fff7ed";
           ctx.lineWidth = 2;
@@ -216,7 +228,19 @@ export function attachEntityCanvas(
     canvas.width = Math.round(size.x * dpr);
     canvas.height = Math.round(size.y * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawnZoom = map.getZoom();
+    drawnCenter = map.getCenter();
     draw();
+  };
+
+  const updateTransform = (center: LatLng, zoom: number) => {
+    const scale = map.getZoomScale(zoom, drawnZoom);
+    const viewHalf = map.getSize().multiplyBy(0.5);
+    const currentCenterPoint = map.project(drawnCenter, zoom);
+    const origin = (
+      map as LeafletMap & { _getNewPixelOrigin: (center: LatLng, zoom: number) => Point }
+    )._getNewPixelOrigin(center, zoom);
+    L.DomUtil.setTransform(canvas, viewHalf.multiplyBy(-scale).add(currentCenterPoint).subtract(origin), scale);
   };
 
   const isStructure = (entity: MapEntity) =>
@@ -284,7 +308,24 @@ export function attachEntityCanvas(
     onSelect(pick(event));
   };
 
-  map.on("move zoom viewreset resize", reset);
+  const onAnimZoom = (event: ZoomAnimEvent) => {
+    updateTransform(event.center, event.zoom);
+  };
+  const onMove = () => {
+    if (!zooming) reset();
+  };
+  const onZoomStart = () => {
+    zooming = true;
+  };
+  const onZoomEnd = () => {
+    zooming = false;
+    reset();
+  };
+
+  map.on("zoomanim", onAnimZoom);
+  map.on("zoomstart", onZoomStart);
+  map.on("zoomend viewreset resize", onZoomEnd);
+  map.on("move", onMove);
   map.on("click", onClick);
   reset();
 
@@ -301,6 +342,10 @@ export function attachEntityCanvas(
       hidden = new Set(next);
       draw();
     },
+    setHiddenSubs(next) {
+      hiddenSubs = new Set(next);
+      draw();
+    },
     setHighlight(key) {
       highlight = key;
       draw();
@@ -315,7 +360,10 @@ export function attachEntityCanvas(
     },
     remove() {
       destroyed = true;
-      map.off("move zoom viewreset resize", reset);
+      map.off("zoomanim", onAnimZoom);
+      map.off("zoomstart", onZoomStart);
+      map.off("zoomend viewreset resize", onZoomEnd);
+      map.off("move", onMove);
       map.off("click", onClick);
       canvas.remove();
     },

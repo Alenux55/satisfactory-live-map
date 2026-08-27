@@ -255,8 +255,8 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
   const empty = !meta?.firstT;
 
   return (
-    <div className="pointer-events-auto w-full rounded-t-lg border border-border/70 bg-background/90 px-3 py-2 shadow-lg backdrop-blur">
-      <div className="mb-1.5 flex min-w-0 flex-wrap items-center gap-2">
+    <div className="pointer-events-auto w-full rounded-t-lg border border-border/70 bg-background/95 px-2 py-1.5 shadow-lg backdrop-blur">
+      <div className="mb-1 flex min-w-0 flex-wrap items-center gap-1.5">
         <Button
           size="xs"
           variant={live ? "default" : "outline"}
@@ -349,7 +349,7 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
       </div>
       <canvas
         ref={canvasRef}
-        className={cn("h-14 w-full cursor-ew-resize rounded-md border border-border/60", empty && "opacity-50")}
+        className={cn("h-8 w-full cursor-ew-resize rounded-md border border-border/60", empty && "opacity-50")}
         onPointerDown={(event) => {
           dragRef.current = { x: event.clientX, start: viewStart, moved: false };
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -372,7 +372,7 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
           dragRef.current = null;
         }}
       />
-      <p className="mt-1 text-[10px] text-muted-foreground">
+      <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
         {empty
           ? "History starts on the next save change for this server. Demo worlds are not recorded."
           : `Scroll to zoom · drag to pan · ${meta.eventCount} changes · ${formatBytes(meta.bytes)}`}

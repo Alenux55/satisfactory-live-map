@@ -137,7 +137,11 @@
 }
 
 .leaflet-bottom {
-  bottom: 6.25rem;
+  bottom: 7.25rem;
+}
+
+.leaflet-control-container {
+  z-index: 1;
 }
 
 .satisfactory-entity-canvas {

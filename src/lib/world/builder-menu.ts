@@ -30,12 +30,14 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "hub",
         label: "The HUB",
-        test: anyOf(/HubTerminal|Build_Hub|TheHub/i),
+        test: anyOf(/HubTerminal|TradingPost|Build_Hub(?!Parts)|TheHub|^Hub$/i),
       },
       {
         id: "special",
         label: "Special",
-        test: anyOf(/SpaceElevator|Mam|WorkBench|Workshop|AwesomeSink|RadarTower|Beacon|Customizer/i),
+        test: anyOf(
+          /SpaceElevator|Mam|WorkBench|Workshop|AwesomeSink|AwesomeShop|ResourceSinkShop|RadarTower|Beacon|Customizer|BlueprintDesigner|\bSPWN\b/i,
+        ),
       },
     ],
   },
@@ -56,12 +58,12 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "manufacturers",
         label: "3. Manufacturers",
-        test: anyOf(/Constructor|Assembler|Manufacturer/i),
+        test: anyOf(/Constructor|Assembler|Manufacturer|Packager/i),
       },
       {
         id: "refineries",
         label: "4. Refineries",
-        test: anyOf(/Refinery|Blender|Packager|Converter|Particle|Accelerator|Quantum|Encoder|Hadron|Mixer/i),
+        test: anyOf(/Refinery|Blender|Particle|Accelerator|Quantum|Encoder|Hadron|Converter|Mixer/i),
       },
     ],
   },
@@ -72,12 +74,12 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "generators",
         label: "1. Generators",
-        test: anyOf(/Generator|NuclearPower|Geothermal/i),
+        test: anyOf(/Generator|NuclearPower|Geothermal|AlienPower/i),
       },
       {
-        id: "poles",
-        label: "2. Power Poles",
-        test: anyOf(/PowerPole|PowerLine/i),
+        id: "grid",
+        label: "2. Power Distribution",
+        test: anyOf(/PowerPole|PowerLine|PowerTower/i),
       },
       {
         id: "outlets",
@@ -85,7 +87,7 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
         test: anyOf(/WallOutlet/i),
       },
       {
-        id: "grid",
+        id: "storage",
         label: "4. Power Storage",
         test: anyOf(/PowerStorage|PowerSwitch|PriorityPower/i),
       },
@@ -99,28 +101,28 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
         id: "belts",
         label: "1. Conveyor Belts",
         test: (p, s) =>
-          /ConveyorBelt|ConveyorChain|^Conveyor$|ConveyorWallHole|ConveyorPassthrough/i.test(p + s) &&
-          !/Lift|Pole|Ceiling/i.test(p + s),
+          /ConveyorBelt|ConveyorChain|^Conveyor$|ConveyorPassthrough/i.test(p + s) &&
+          !/Lift|Pole|Ceiling|Wall|FloorHole|WallHole/i.test(p + s),
       },
       {
         id: "lifts",
         label: "2. Conveyor Lifts",
-        test: anyOf(/ConveyorLift|Lift/i),
+        test: anyOf(/ConveyorLift/i),
       },
       {
         id: "poles",
         label: "3. Conveyor Poles",
-        test: anyOf(/ConveyorPole|ConveyorCeiling/i),
+        test: anyOf(/ConveyorPole|ConveyorCeiling|ConveyorWallHole|ConveyorFloorHole|FloorHole.*Conveyor|CeilingAttachment/i),
       },
       {
         id: "pipes",
         label: "4. Pipelines",
-        test: (p, s) => /Pipeline(?!Pump|Junction|Support)|PipeNetwork/i.test(p + s),
+        test: (p, s) => /Pipeline(?!Pump|Junction|Support|Wall|Floor)|PipeNetwork/i.test(p + s),
       },
       {
         id: "pipe-util",
         label: "5. Pipeline Supports",
-        test: anyOf(/PipelinePump|PipePump|PipelineJunction|PipelineSupport|Valve/i),
+        test: anyOf(/PipelinePump|PipePump|PipelineJunction|PipelineSupport|PipelineWall|PipelineFloor|Valve/i),
       },
       {
         id: "splitters",
@@ -151,7 +153,7 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "utility",
         label: "3. Access & utility",
-        test: anyOf(/Lookout|Ladder|JumpPad|HypertubeAttachment|Blueprint/i),
+        test: anyOf(/Lookout|Crate|Shelf|DimensionalDepot|CentralStorage/i),
       },
     ],
   },
@@ -162,12 +164,18 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "foundations",
         label: "1. Foundations",
-        test: (p, s) => /Foundation/i.test(p + s) && !/Ramp|Wall/i.test(p + s),
+        test: (p, s) =>
+          /Foundation|HalfFoundation/i.test(p + s) && !/Ramp|Wall|Frame|QuarterPipe/i.test(p + s),
       },
       {
         id: "ramps",
         label: "2. Ramps",
-        test: anyOf(/Ramp/i),
+        test: (p, s) => /Ramp/i.test(p + s) && !/Wall/i.test(p + s),
+      },
+      {
+        id: "quarter-pipes",
+        label: "3. Quarter-pipes",
+        test: anyOf(/QuarterPipe|DownCorner|InvertedCorner/i),
       },
     ],
   },
@@ -178,7 +186,7 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "walls",
         label: "1. Walls",
-        test: (p, s) => /Wall/i.test(p + s) && !/Outlet|Power/i.test(p + s),
+        test: (p, s) => /Wall/i.test(p + s) && !/Outlet|Power|Window|Door|Gate/i.test(p + s),
       },
       {
         id: "doors",
@@ -204,7 +212,7 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "frames",
         label: "3. Frames & pillars",
-        test: anyOf(/Pillar|Beam|Frame|Railing|Barrier|Fence/i),
+        test: anyOf(/Pillar|Beam|Frame|Railing|Barrier|Fence|Ladder|Fan|Vent/i),
       },
     ],
   },
@@ -220,7 +228,7 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "trains",
         label: "2. Trains",
-        test: anyOf(/Train|Railroad|Locomotive|FreightWagon|FreightPlatform|TrainStation/i),
+        test: anyOf(/Train|Railroad|Locomotive|FreightWagon|FreightPlatform|TrainStation|BufferStop|BlockSignal|PathSignal|EmptyPlatform|SwitchControl/i),
       },
       {
         id: "drones",
@@ -231,6 +239,11 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
         id: "hypertubes",
         label: "4. Hypertubes",
         test: anyOf(/HyperTube|PipeHyper/i),
+      },
+      {
+        id: "pioneer",
+        label: "5. Pioneer transport",
+        test: anyOf(/JumpPad|LandingPad|PersonnelElevator|Portal/i),
       },
     ],
   },

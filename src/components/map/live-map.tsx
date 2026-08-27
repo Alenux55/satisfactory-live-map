@@ -48,6 +48,7 @@ export function LiveMap() {
   const [serverId, setServerId] = useState(DEMO_SERVER_ID);
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
   const [hiddenTypes, setHiddenTypes] = useState<string[]>([]);
+  const [hiddenSubs, setHiddenSubs] = useState<string[]>([]);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [account, setAccount] = useState<PublicUser | null>(null);
   const [prefsReady, setPrefsReady] = useState(false);
@@ -80,6 +81,7 @@ export function LiveMap() {
       setServerId(body.user.prefs.serverId || DEMO_SERVER_ID);
       setLayers(body.user.prefs.layers ?? DEFAULT_LAYERS);
       setHiddenTypes(body.user.prefs.hiddenTypes ?? []);
+      setHiddenSubs(body.user.prefs.hiddenSubs ?? []);
       setLeftWidth(clampSidebarWidth(body.user.prefs.leftWidth, DEFAULT_LEFT_WIDTH));
       setRightWidth(clampSidebarWidth(body.user.prefs.rightWidth, DEFAULT_RIGHT_WIDTH));
       setPrefsReady(true);
@@ -164,6 +166,10 @@ export function LiveMap() {
   }, [hiddenTypes]);
 
   useEffect(() => {
+    canvasRef.current?.setHiddenSubs(hiddenSubs);
+  }, [hiddenSubs]);
+
+  useEffect(() => {
     canvasRef.current?.setHighlight(highlight);
   }, [highlight]);
 
@@ -234,6 +240,7 @@ export function LiveMap() {
       const canvas = attachEntityCanvas(L, map, (entity) => setSelected(entity));
       canvas.setLayers(layersRef.current);
       canvas.setHiddenTypes(hiddenTypes);
+      canvas.setHiddenSubs(hiddenSubs);
       canvas.setEntities(entitiesRef.current);
       canvasRef.current = canvas;
 
@@ -298,12 +305,12 @@ export function LiveMap() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "prefs",
-          prefs: { serverId, layers, hiddenTypes, leftWidth, rightWidth },
+          prefs: { serverId, layers, hiddenTypes, hiddenSubs, leftWidth, rightWidth },
         }),
       });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [account, hiddenTypes, layers, leftWidth, prefsReady, rightWidth, serverId]);
+  }, [account, hiddenSubs, hiddenTypes, layers, leftWidth, prefsReady, rightWidth, serverId]);
 
   useEffect(() => {
     if (!prefsReady) return;
@@ -428,7 +435,7 @@ export function LiveMap() {
         <SidebarResizeHandle edge="left" onDelta={resizeLeft} />
       </aside>
       <div className="relative h-full min-h-0 min-w-0 flex-1">
-        <div ref={containerRef} className="relative z-0 h-full w-full bg-[#0c1c2c]" />
+        <div ref={containerRef} className="relative z-0 h-full w-full isolate bg-[#0c1c2c]" />
         <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3">
           <div className="pointer-events-auto md:hidden">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -461,8 +468,10 @@ export function LiveMap() {
                     entities={entityMap}
                     layers={layers}
                     hiddenTypes={hiddenTypes}
+                    hiddenSubs={hiddenSubs}
                     onLayers={setLayers}
                     onHiddenTypes={setHiddenTypes}
+                    onHiddenSubs={setHiddenSubs}
                     onHover={setHighlight}
                   />
                 </SheetContent>
@@ -474,7 +483,7 @@ export function LiveMap() {
             </div>
           </div>
         </div>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 p-2">
           <HistoryTimeline
             serverId={serverId}
             live={historyLive}
@@ -493,8 +502,10 @@ export function LiveMap() {
           entities={entityMap}
           layers={layers}
           hiddenTypes={hiddenTypes}
+          hiddenSubs={hiddenSubs}
           onLayers={setLayers}
           onHiddenTypes={setHiddenTypes}
+          onHiddenSubs={setHiddenSubs}
           onHover={setHighlight}
         />
       </aside>

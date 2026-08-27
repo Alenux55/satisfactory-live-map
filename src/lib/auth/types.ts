@@ -6,6 +6,7 @@ export type UserPrefs = {
   serverId: string;
   layers: Record<EntityCategory, boolean>;
   hiddenTypes: string[];
+  hiddenSubs: string[];
   leftWidth: number;
   rightWidth: number;
 };
@@ -53,6 +54,7 @@ export function defaultPrefs(): UserPrefs {
     serverId: DEMO_SERVER_ID,
     layers: { ...DEFAULT_LAYERS },
     hiddenTypes: [],
+    hiddenSubs: [],
     leftWidth: DEFAULT_LEFT_WIDTH,
     rightWidth: DEFAULT_RIGHT_WIDTH,
   };

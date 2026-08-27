@@ -6,7 +6,7 @@ export const CATEGORY_COLORS: Record<EntityCategory, string> = {
   power: "#3ecfcf",
   logistics: "#f6c90e",
   organization: "#94a3b8",
-  foundations: "#64748b",
+  foundations: "#e4c37a",
   walls: "#7c8b9a",
   architecture: "#8b7c6e",
   transport: "#a78bfa",
@@ -62,10 +62,18 @@ export function categorize(typePath: string): EntityCategory {
   if (/ResourceNode|FrackingSatellite|FrackingCore|Geyser/i.test(p) && !/Miner|Extractor|Pump|Generator/i.test(p)) {
     return "resource";
   }
-  if (/HubTerminal|Hub|SpaceElevator|Mam|WorkBench|Workshop|AwesomeSink|RadarTower|Beacon|TheHub/i.test(p)) {
+  if (
+    /HubTerminal|TradingPost|TheHub|Build_Hub|SpaceElevator|Mam|WorkBench|Workshop|AwesomeSink|AwesomeShop|ResourceSinkShop|RadarTower|Beacon|BlueprintDesigner|\bSPWN\b/i.test(
+      p,
+    )
+  ) {
     return "special";
   }
-  if (/Generator|PowerPole|PowerLine|WallOutlet|PowerStorage|PowerSwitch|PriorityPower|NuclearPower|Geothermal/i.test(p)) {
+  if (
+    /AlienPower|PowerTower|Generator|PowerPole|PowerLine|WallOutlet|PowerStorage|PowerSwitch|PriorityPower|NuclearPower|Geothermal/i.test(
+      p,
+    )
+  ) {
     return "power";
   }
   if (
@@ -75,19 +83,32 @@ export function categorize(typePath: string): EntityCategory {
   ) {
     return "production";
   }
-  if (/TrainStation|Railroad|Train|Drone|HyperTube|PipeHyper|LandingPad|Freight|Locomotive|FreightWagon/i.test(p)) {
+  if (
+    /TrainStation|Railroad|Train|Drone|HyperTube|PipeHyper|LandingPad|Freight|Locomotive|FreightWagon|BufferStop|BlockSignal|PathSignal|EmptyPlatform|Portal|PersonnelElevator|JumpPad/i.test(
+      p,
+    )
+  ) {
     return "transport";
   }
   if (/CyberWagon|FactoryCart|Wheeled|Explorer|Tractor|Truck|GolfCart|Vehicle/i.test(p) && !/TrainStation|Railroad/i.test(p)) {
     return "transport";
   }
+  if (/ConveyorWall/i.test(p)) return "walls";
   if (/Conveyor|Pipeline|Storage|Splitter|Merger|Lift|PipePump|PipelinePump|Valve|Junction/i.test(p)) {
     return "logistics";
   }
-  if (/Foundation|Ramp/i.test(p) && !/Wall/i.test(p)) return "foundations";
-  if (/Wall|Door|Window/i.test(p) && !/Outlet|Power/i.test(p)) return "walls";
-  if (/Roof|Walkway|Stair|Pillar|Beam|Frame|Catwalk|Fence|Railing|Barrier/i.test(p)) return "architecture";
-  if (/Lookout|Sign|Billboard|Label|Floodlight|StreetLight|CeilingLight|Ladder|JumpPad/i.test(p)) return "organization";
+  if (/QuarterPipe|HalfFoundation|Foundation|Ramp|DownCorner|InvertedCorner/i.test(p) && !/Wall|Frame/i.test(p)) {
+    return "foundations";
+  }
+  if (/Wall|Door|Window|Gate/i.test(p) && !/Outlet|Power/i.test(p)) return "walls";
+  if (/Roof|Walkway|Stair|Pillar|Beam|Frame|Catwalk|Fence|Railing|Barrier|Ladder|Fan|Vent/i.test(p)) return "architecture";
+  if (
+    /Lookout|Sign|Billboard|Label|Floodlight|StreetLight|CeilingLight|Light|Crate|Shelf|DimensionalDepot|CentralStorage/i.test(
+      p,
+    )
+  ) {
+    return "organization";
+  }
   return "other";
 }
 

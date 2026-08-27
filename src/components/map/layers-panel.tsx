@@ -37,18 +37,23 @@ export function LayersPanel({
   entities,
   layers,
   hiddenTypes,
+  hiddenSubs,
   onLayers,
   onHiddenTypes,
+  onHiddenSubs,
   onHover,
 }: {
   entities: Map<string, MapEntity>;
   layers: LayerFlags;
   hiddenTypes: string[];
+  hiddenSubs: string[];
   onLayers: (layers: LayerFlags) => void;
   onHiddenTypes: (hidden: string[]) => void;
+  onHiddenSubs: (hidden: string[]) => void;
   onHover: (key: string | null) => void;
 }) {
   const hidden = useMemo(() => new Set(hiddenTypes), [hiddenTypes]);
+  const hiddenSubSet = useMemo(() => new Set(hiddenSubs), [hiddenSubs]);
   const [openCats, setOpenCats] = useState<Set<string>>(new Set());
 
   const grouped = useMemo(() => {
@@ -103,14 +108,24 @@ export function LayersPanel({
     setTypes([key], on, category);
   };
 
+  const setSub = (catId: string, subId: string, on: boolean) => {
+    const key = `${catId}:${subId}`;
+    const next = new Set(hiddenSubSet);
+    if (on) next.delete(key);
+    else next.add(key);
+    onHiddenSubs([...next]);
+  };
+
   const allOn = () => {
     onLayers({ ...DEFAULT_LAYERS, ...Object.fromEntries(BUILDER_MENU.map((cat) => [cat.id, true])) } as LayerFlags);
     onHiddenTypes([]);
+    onHiddenSubs([]);
   };
 
   const allOff = () => {
     onLayers(Object.fromEntries(BUILDER_MENU.map((cat) => [cat.id, false])) as LayerFlags);
     onHiddenTypes([]);
+    onHiddenSubs([]);
   };
 
   const groupOn = (rows: TypeRow[], category: EntityCategory) => {
@@ -126,8 +141,6 @@ export function LayersPanel({
     );
   };
 
-  const groupChecked = (rows: TypeRow[]) => rows.length > 0 && rows.every((row) => !hidden.has(row.key));
-
   return (
     <ScrollArea className="h-full min-h-0 w-full min-w-0 flex-1 overflow-x-hidden">
       <div className="flex min-w-0 flex-col gap-3 px-3 py-4 pb-10">
@@ -137,16 +150,17 @@ export function LayersPanel({
             Layers
           </p>
           <span className="flex shrink-0 gap-1">
-            <Button size="xs" variant="ghost" onClick={allOn}>
+            <Button size="xs" variant="outline" onClick={allOn}>
               All on
             </Button>
-            <Button size="xs" variant="ghost" onClick={allOff}>
+            <Button size="xs" variant="outline" onClick={allOff}>
               All off
             </Button>
           </span>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Categories match the in-game Builder. Expand one to toggle types; hover a row to highlight it on the map.
+          Categories match the in-game Builder. Section and subsection switches hide a group without changing the
+          switches inside it. All on / All off still set every row.
         </p>
         {BUILDER_MENU.map((cat) => {
           const rows = grouped.get(cat.id) ?? [];
@@ -181,22 +195,23 @@ export function LayersPanel({
                   />
                 </div>
                 {rows.length > 1 ? (
-                <div className="flex min-w-0 items-center justify-end gap-0.5">
+                <div className="flex min-w-0 items-center justify-end gap-1">
                   <Button
                     size="xs"
-                    variant="ghost"
-                    className="h-5 px-1.5 text-[10px]"
+                    variant="outline"
+                    className="h-6 px-2 text-[11px]"
                     onClick={() => {
                       setCategory(cat.id, true);
                       groupOn(rows, cat.id);
+                      onHiddenSubs(hiddenSubs.filter((key) => !key.startsWith(`${cat.id}:`)));
                     }}
                   >
                     All on
                   </Button>
                   <Button
                     size="xs"
-                    variant="ghost"
-                    className="h-5 px-1.5 text-[10px]"
+                    variant="outline"
+                    className="h-6 px-2 text-[11px]"
                     onClick={() => groupOff(rows, cat.id)}
                   >
                     All off
@@ -222,17 +237,36 @@ export function LayersPanel({
                         if (!subRows.length) return null;
                         return (
                           <div key={sub.id} className="min-w-0">
-                              <div className="mb-1 min-w-0">
-                              <p className="truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                              <div className="mb-1 flex min-w-0 items-center gap-2">
+                              <p className="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                                 {sub.label}
                               </p>
                               {subRows.length > 1 ? (
-                              <div className="flex min-w-0 justify-end">
-                                <GroupActions
-                                  checked={groupChecked(subRows)}
-                                  onChecked={(on) => (on ? groupOn(subRows, cat.id) : groupOff(subRows, cat.id))}
-                                  onAllOn={() => groupOn(subRows, cat.id)}
-                                  onAllOff={() => groupOff(subRows, cat.id)}
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  className="h-6 px-2 text-[11px]"
+                                  onClick={() => {
+                                    setSub(cat.id, sub.id, true);
+                                    groupOn(subRows, cat.id);
+                                  }}
+                                >
+                                  All on
+                                </Button>
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  className="h-6 px-2 text-[11px]"
+                                  onClick={() => groupOff(subRows, cat.id)}
+                                >
+                                  All off
+                                </Button>
+                                <Switch
+                                  size="sm"
+                                  className="shrink-0"
+                                  checked={!hiddenSubSet.has(`${cat.id}:${sub.id}`)}
+                                  onCheckedChange={(on) => setSub(cat.id, sub.id, on)}
                                 />
                               </div>
                               ) : null}
@@ -272,30 +306,6 @@ export function LayersPanel({
         })}
       </div>
     </ScrollArea>
-  );
-}
-
-function GroupActions({
-  checked,
-  onChecked,
-  onAllOn,
-  onAllOff,
-}: {
-  checked: boolean;
-  onChecked: (on: boolean) => void;
-  onAllOn: () => void;
-  onAllOff: () => void;
-}) {
-  return (
-    <div className="flex shrink-0 items-center gap-0.5">
-      <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={onAllOn}>
-        All on
-      </Button>
-      <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={onAllOff}>
-        All off
-      </Button>
-      <Switch size="sm" className="shrink-0" checked={checked} onCheckedChange={onChecked} />
-    </div>
   );
 }
 
