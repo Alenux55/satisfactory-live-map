@@ -45,7 +45,7 @@ type Props = {
   onZRange: (lower: number, upper: number) => void;
   onZReset: () => void;
   onServerId: (id: string) => void;
-  onConfig: (patch: ConfigPatch) => Promise<void>;
+  onConfig: (patch: ConfigPatch) => Promise<{ alreadyExists?: boolean; reclaimed?: boolean } | void>;
   onUpload: (file: File) => Promise<void>;
   onRefresh: () => Promise<void>;
   account: PublicUser | null;
@@ -77,6 +77,7 @@ export function ControlPanel({
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [addName, setAddName] = useState("");
   const [addDir, setAddDir] = useState("");
+  const [addNote, setAddNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const servers = config?.servers ?? [];
@@ -187,7 +188,7 @@ export function ControlPanel({
         <div className="flex flex-col gap-3">
           <select
             id="server"
-            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             value={current?.id ?? serverId}
             onChange={(event) => onServerId(event.target.value)}
           >
@@ -343,8 +344,9 @@ export function ControlPanel({
             disabled={busy || !addDir.trim()}
             onClick={async () => {
               setBusy(true);
+              setAddNote(null);
               try {
-                await onConfig({
+                const result = await onConfig({
                   addServer: {
                     name: addName.trim() || "Dedicated server",
                     savesDir: addDir.trim(),
@@ -352,6 +354,11 @@ export function ControlPanel({
                 });
                 setAddName("");
                 setAddDir("");
+                if (result?.alreadyExists) {
+                  setAddNote("Already in the list — switched to that server.");
+                } else if (result?.reclaimed) {
+                  setAddNote("Found existing history for this world — reusing it instead of creating a new folder.");
+                }
               } finally {
                 setBusy(false);
               }
@@ -360,6 +367,7 @@ export function ControlPanel({
             <Plus />
             Add save location
           </Button>
+          {addNote ? <p className="text-[11px] text-primary">{addNote}</p> : null}
         </div>
         ) : null}
         </Section>

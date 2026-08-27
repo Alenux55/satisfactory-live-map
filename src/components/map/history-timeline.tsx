@@ -324,7 +324,7 @@ export function HistoryTimeline({ serverId, live, liveRev, onLiveChange, onSeek 
           {playing ? <Pause /> : <Play />}
         </Button>
         <select
-          className="h-6 rounded-md border border-border bg-background px-1 font-mono text-[11px]"
+          className="h-6 rounded-md border border-border bg-background px-1 font-mono text-[11px] text-foreground"
           value={speedId}
           onChange={(event) => setSpeedId(event.target.value as (typeof SPEEDS)[number]["id"])}
         >

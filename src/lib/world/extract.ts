@@ -518,12 +518,15 @@ function extractPowerLine(obj: SaveEntity, into: MapEntity[]): void {
 
 export function headerFromSave(save: SatisfactorySave): SaveHeaderInfo {
   const header = save.header;
+  const saveIdentifier = header.saveIdentifier?.trim();
   return {
     sessionName: header.sessionName || save.name || "Unnamed session",
     mapName: header.mapName || "Persistent_Level",
     playDurationSeconds: header.playDurationSeconds ?? 0,
     saveDateTime: String(header.saveDateTime ?? ""),
     buildVersion: header.buildVersion ?? 0,
+    ...(header.creativeModeEnabled ? { creativeModeEnabled: true } : {}),
+    ...(saveIdentifier ? { saveIdentifier } : {}),
   };
 }
 

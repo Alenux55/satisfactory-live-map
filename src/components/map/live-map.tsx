@@ -347,10 +347,17 @@ export function LiveMap() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-    const body = (await response.json()) as { config: HubConfig; status: HubStatus; added?: { id: string } };
+    const body = (await response.json()) as {
+      config: HubConfig;
+      status: HubStatus;
+      added?: { id: string };
+      alreadyExists?: boolean;
+      reclaimed?: boolean;
+    };
     setConfig(body.config);
     setStatus(body.status);
     if (body.added?.id) selectServer(body.added.id);
+    return { alreadyExists: body.alreadyExists, reclaimed: body.reclaimed };
   };
 
   const uploadSave = async (file: File) => {

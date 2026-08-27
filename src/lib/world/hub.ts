@@ -503,6 +503,7 @@ export class WorldHub {
     if (this.entry.kind !== "demo") {
       persistHistory({
         serverId: this.entry.id,
+        savesDir: this.entry.savesDir,
         t: this.lastChangeAt ?? Date.now(),
         rev: this.rev,
         fromRev,

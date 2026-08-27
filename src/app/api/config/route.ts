@@ -24,8 +24,8 @@ export async function PUT(request: Request) {
     const registry = getRegistry();
     await registry.whenReady();
     const patch = (await request.json()) as ConfigPatch;
-    const { config, added } = await registry.update(patch);
+    const { config, added, alreadyExists, reclaimed } = await registry.update(patch);
     const hub = added ? getRegistry().getHub(added.id) : await hubForRequest(request);
-    return Response.json({ config, status: hub.getStatus(), added });
+    return Response.json({ config, status: hub.getStatus(), added, alreadyExists, reclaimed });
   });
 }

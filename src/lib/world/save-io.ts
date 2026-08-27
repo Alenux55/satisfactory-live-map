@@ -21,6 +21,12 @@ export function normalizeFsPath(input: string): string {
   return path.resolve(expandWindowsEnv(trimmed));
 }
 
+export function sameFsPath(a: string, b: string): boolean {
+  const left = normalizeFsPath(a);
+  const right = normalizeFsPath(b);
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+
 export function isWatchableSaveName(name: string): boolean {
   const base = path.basename(name);
   const lower = base.toLowerCase();

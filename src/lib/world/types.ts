@@ -71,6 +71,8 @@ export type SaveHeaderInfo = {
   saveDateTime: string;
   buildVersion: number;
   creativeModeEnabled?: boolean;
+  /** Session GUID from the save header (`saveIdentifier`). Stable across autosaves. */
+  saveIdentifier?: string;
 };
 
 export type WorldSource = {

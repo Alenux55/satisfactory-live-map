@@ -114,7 +114,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           <Label htmlFor="new-role">Role</Label>
           <select
             id="new-role"
-            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            className="h-8 rounded-lg border border-input bg-background px-2.5 text-sm text-foreground"
             value={role}
             onChange={(e) => setRole(e.target.value as UserRole)}
           >

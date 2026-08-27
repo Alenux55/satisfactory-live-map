@@ -1,8 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { logger } from "@/lib/log";
 import { DEFAULT_SAVES_DIR, WorldHub } from "./hub";
-import { normalizeFsPath } from "./save-io";
+import { findOrphanHistoryId, mergeHistoryInto, peekHistoryIdentity, reclaimHistoryForServers } from "./history";
+import { peekNewestSaveHeader } from "./save-header";
+import { normalizeFsPath, sameFsPath } from "./save-io";
 import {
   DEMO_SERVER_ID,
   nearestPollInterval,
@@ -30,6 +33,19 @@ function demoFirst(servers: ServerEntry[]): ServerEntry[] {
 
 function newServerId(): string {
   return `srv-${Date.now().toString(36)}`;
+}
+
+function stableServerId(savesDir: string): string {
+  const key = process.platform === "win32" ? savesDir.toLowerCase() : savesDir;
+  return `srv-${createHash("sha1").update(key).digest("hex").slice(0, 10)}`;
+}
+
+function findWatchByDir(servers: ServerEntry[], savesDir: string, saveFile?: string | null): ServerEntry | undefined {
+  return servers.find((server) => {
+    if (server.kind !== "watch" || !sameFsPath(server.savesDir, savesDir)) return false;
+    if (saveFile) return server.saveFile != null && sameFsPath(server.saveFile, saveFile);
+    return true;
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -101,18 +117,16 @@ function applyEnvOverlay(config: HubConfig): HubConfig {
   if (dir || file || mode === "watch") {
     const savesDir = dir ? normalizeFsPath(dir) : next.servers.find((s) => s.kind === "watch")?.savesDir ?? DEFAULT_SAVES_DIR;
     const saveFile = file ? normalizeFsPath(file) : null;
-    const existing = next.servers.find(
-      (server) => server.kind === "watch" && server.savesDir === savesDir && (saveFile ? server.saveFile === saveFile : true),
-    );
+    const existing = findWatchByDir(next.servers, savesDir, saveFile);
     if (existing) {
       if (saveFile) existing.saveFile = saveFile;
     } else {
-      const sameDir = next.servers.find((server) => server.kind === "watch" && server.savesDir === savesDir);
+      const sameDir = findWatchByDir(next.servers, savesDir);
       if (sameDir && saveFile) {
         sameDir.saveFile = saveFile;
-      } else if (!next.servers.some((server) => server.kind === "watch" && server.savesDir === savesDir)) {
+      } else if (!findWatchByDir(next.servers, savesDir)) {
         next.servers.push({
-          id: next.servers.some((server) => server.id === "dedicated") ? newServerId() : "dedicated",
+          id: next.servers.some((server) => server.id === "dedicated") ? stableServerId(savesDir) : "dedicated",
           name: "Dedicated server",
           kind: "watch",
           savesDir,
@@ -161,14 +175,19 @@ export class HubRegistry {
     return this.config.servers.some((server) => server.id === serverId);
   }
 
-  async update(patch: ConfigPatch): Promise<{ config: HubConfig; added?: ServerEntry }> {
+  async update(patch: ConfigPatch): Promise<{ config: HubConfig; added?: ServerEntry; alreadyExists?: boolean; reclaimed?: boolean }> {
     let added: ServerEntry | undefined;
+    let alreadyExists = false;
+    let reclaimed = false;
     if (patch.pollIntervalSeconds != null) {
       this.config.pollIntervalSeconds = nearestPollInterval(patch.pollIntervalSeconds);
       for (const hub of this.hubs.values()) hub.setPollInterval(this.config.pollIntervalSeconds);
     }
     if (patch.addServer) {
-      added = await this.addServer(patch.addServer);
+      const result = await this.addServer(patch.addServer);
+      added = result.entry;
+      alreadyExists = result.alreadyExists;
+      reclaimed = result.reclaimed;
     }
     if (patch.updateServer) {
       await this.updateServer(patch.updateServer);
@@ -181,7 +200,7 @@ export class HubRegistry {
       poll: this.config.pollIntervalSeconds,
       servers: this.config.servers.map((server) => ({ id: server.id, kind: server.kind, name: server.name })),
     });
-    return { config: this.getConfig(), added };
+    return { config: this.getConfig(), added, alreadyExists, reclaimed };
   }
 
   async ingestUpload(serverId: string | null, fileName: string, bytes: Buffer): Promise<string> {
@@ -191,7 +210,7 @@ export class HubRegistry {
         name: fileName.replace(/\.sav$/i, "") || "Uploaded save",
         savesDir: path.join(process.cwd(), "data", "uploads"),
       });
-      targetId = created.id;
+      targetId = created.entry.id;
     }
     const hub = this.getHub(targetId);
     await hub.ingestUpload(fileName, bytes);
@@ -201,19 +220,44 @@ export class HubRegistry {
     return targetId;
   }
 
-  private async addServer(input: { name: string; savesDir: string; saveFile?: string | null }): Promise<ServerEntry> {
+  private async addServer(input: { name: string; savesDir: string; saveFile?: string | null }): Promise<{
+    entry: ServerEntry;
+    alreadyExists: boolean;
+    reclaimed: boolean;
+  }> {
     const name = input.name.trim() || `Server ${this.config.servers.length}`;
+    const savesDir = normalizeFsPath(input.savesDir || DEFAULT_SAVES_DIR);
+    const saveFile = input.saveFile?.trim() ? normalizeFsPath(input.saveFile) : null;
+    const existing = findWatchByDir(this.config.servers, savesDir);
+    if (existing) {
+      if (name && name !== existing.name && name !== "Dedicated server") existing.name = name;
+      if (saveFile) existing.saveFile = saveFile;
+      this.hubs.get(existing.id)?.applyEntry(existing);
+      return { entry: existing, alreadyExists: true, reclaimed: false };
+    }
+
+    const header = await peekNewestSaveHeader(savesDir);
+    const orphanId = await findOrphanHistoryId({
+      savesDir,
+      header,
+      catalogIds: this.config.servers.map((server) => server.id),
+    });
+    let id = orphanId ?? stableServerId(savesDir);
+    if (!orphanId && this.hasServer(id)) id = newServerId();
     const entry: ServerEntry = {
-      id: newServerId(),
+      id,
       name,
       kind: "watch",
-      savesDir: normalizeFsPath(input.savesDir || DEFAULT_SAVES_DIR),
-      saveFile: input.saveFile?.trim() ? normalizeFsPath(input.saveFile) : null,
+      savesDir,
+      saveFile,
     };
     this.config.servers = demoFirst([...this.config.servers, entry]);
     this.hubs.set(entry.id, new WorldHub(entry, this.config.pollIntervalSeconds));
     await this.hubs.get(entry.id)!.whenReady();
-    return entry;
+    if (orphanId) {
+      logger.info("reclaimed existing history folder", { serverId: orphanId, savesDir });
+    }
+    return { entry, alreadyExists: false, reclaimed: Boolean(orphanId) };
   }
 
   private async updateServer(patch: { id: string; name?: string; savesDir?: string; saveFile?: string | null }): Promise<void> {
@@ -244,6 +288,49 @@ export class HubRegistry {
     this.hubs.delete(id);
   }
 
+  private async collapseDuplicateWatchServers(): Promise<number> {
+    const kept: ServerEntry[] = [];
+    const discarded: { from: string; to: string }[] = [];
+    for (const server of this.config.servers) {
+      if (server.kind !== "watch") {
+        kept.push(server);
+        continue;
+      }
+      const prev = kept.find((entry) => entry.kind === "watch" && sameFsPath(entry.savesDir, server.savesDir));
+      if (!prev) {
+        kept.push(server);
+        continue;
+      }
+      if (!prev.saveFile && server.saveFile) prev.saveFile = server.saveFile;
+      discarded.push({ from: server.id, to: prev.id });
+    }
+    this.config.servers = demoFirst(kept);
+    for (const item of discarded) {
+      await mergeHistoryInto(item.to, [item.from]);
+    }
+    return discarded.length;
+  }
+
+  private async reclaimOrphanHistory(): Promise<void> {
+    const identities = new Map<
+      string,
+      { saveIdentifier?: string; sessionName?: string; mapName?: string; savesDir?: string }
+    >();
+    for (const server of this.config.servers) {
+      if (server.kind !== "watch") continue;
+      const header = await peekNewestSaveHeader(server.savesDir);
+      const fromHistory = await peekHistoryIdentity(server.id);
+      identities.set(server.id, {
+        saveIdentifier: header?.saveIdentifier || fromHistory.saveIdentifier,
+        sessionName: header?.sessionName || fromHistory.sessionName,
+        mapName: header?.mapName || fromHistory.mapName,
+        savesDir: server.savesDir,
+      });
+    }
+    const merged = await reclaimHistoryForServers(this.config.servers, identities);
+    if (merged > 0) logger.info("reclaimed orphan history folders", { merged });
+  }
+
   private async bootstrap(): Promise<void> {
     await fs.mkdir(DATA_DIR, { recursive: true });
     let loaded: unknown = null;
@@ -253,6 +340,11 @@ export class HubRegistry {
       loaded = null;
     }
     this.config = applyEnvOverlay(migrateConfig(loaded));
+    const collapsed = await this.collapseDuplicateWatchServers();
+    if (collapsed > 0) {
+      logger.info("collapsed duplicate save folders in catalog", { collapsed });
+    }
+    await this.reclaimOrphanHistory();
     await this.persist();
     logger.info("server catalog loaded", {
       poll: this.config.pollIntervalSeconds,
