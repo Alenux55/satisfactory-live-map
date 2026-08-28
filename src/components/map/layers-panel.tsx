@@ -106,6 +106,7 @@ export function LayersPanel({
   const hidden = useMemo(() => new Set(hiddenTypes), [hiddenTypes]);
   const hiddenSubSet = useMemo(() => new Set(hiddenSubs), [hiddenSubs]);
   const [openCats, setOpenCats] = useState<Set<string>>(new Set());
+  const [openSubs, setOpenSubs] = useState<Set<string>>(new Set());
 
   const grouped = useMemo(() => {
     const byCat = new Map<EntityCategory, TypeRow[]>();
@@ -231,6 +232,16 @@ export function LayersPanel({
     onHiddenSubs([...next]);
   };
 
+  const toggleSubOpen = (catId: string, subId: string) => {
+    const key = `${catId}:${subId}`;
+    setOpenSubs((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const applyBoostPin = (next: BoostPin) => {
     onBoostPin(next);
     if (!boostPinIsActive(next)) return;
@@ -239,6 +250,7 @@ export function LayersPanel({
     const types = new Set(hidden);
     const subs = new Set(hiddenSubSet);
     const opened = new Set<EntityCategory>();
+    const openedSubKeys = new Set<string>();
     let layersChanged = false;
     for (const entity of entities.values()) {
       if (!entityMatchesBoostPin(entity, next)) continue;
@@ -246,7 +258,8 @@ export function LayersPanel({
         nextLayers[entity.category] = true;
         layersChanged = true;
       }
-      subs.delete(`${entity.category}:${subcategoryId(entity)}`);
+      const subKey = `${entity.category}:${subcategoryId(entity)}`;
+      subs.delete(subKey);
       types.delete(layerKey(entity));
       if (entity.category === "resource") {
         const key = layerKey(entity);
@@ -254,6 +267,7 @@ export function LayersPanel({
         types.delete(`${key}:unclaimed`);
       }
       opened.add(entity.category);
+      openedSubKeys.add(subKey);
     }
     if (layersChanged) onLayers(nextLayers);
     if (subs.size !== hiddenSubSet.size) onHiddenSubs([...subs]);
@@ -262,6 +276,13 @@ export function LayersPanel({
       setOpenCats((current) => {
         const merged = new Set(current);
         for (const id of opened) merged.add(id);
+        return merged;
+      });
+    }
+    if (openedSubKeys.size > 0) {
+      setOpenSubs((current) => {
+        const merged = new Set(current);
+        for (const key of openedSubKeys) merged.add(key);
         return merged;
       });
     }
@@ -382,6 +403,10 @@ export function LayersPanel({
                         const source = cat.id === "crates" ? mergeCrateRows(rows) : rows;
                         const subRows = source.filter((row) => row.sub === sub.id);
                         if (!subRows.length) return null;
+                        const subKey = `${cat.id}:${sub.id}`;
+                        const collapsible = subRows.length > 1;
+                        const subOpen = !collapsible || openSubs.has(subKey);
+                        const subCount = subRows.reduce((sum, row) => sum + row.count, 0);
                         return (
                           <div
                             key={sub.id}
@@ -390,10 +415,30 @@ export function LayersPanel({
                             onMouseLeave={() => onHover(categoryHighlightKey(cat.id))}
                           >
                             <div className="mb-1 flex min-w-0 items-center gap-2 rounded-md hover:bg-muted/40">
-                              <p className="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                                {sub.label}
-                              </p>
-                              {subRows.length > 1 ? (
+                              {collapsible ? (
+                                <button
+                                  type="button"
+                                  className="flex min-w-0 flex-1 items-center gap-1 text-left"
+                                  aria-expanded={subOpen}
+                                  onClick={() => toggleSubOpen(cat.id, sub.id)}
+                                >
+                                  <ChevronDown
+                                    className={cn(
+                                      "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                                      subOpen ? "" : "-rotate-90",
+                                    )}
+                                  />
+                                  <span className="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                                    {sub.label}
+                                  </span>
+                                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{subCount}</span>
+                                </button>
+                              ) : (
+                                <p className="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                                  {sub.label}
+                                </p>
+                              )}
+                              {collapsible ? (
                               <div className="flex shrink-0 items-center gap-1">
                                 <Button
                                   size="xs"
@@ -426,6 +471,7 @@ export function LayersPanel({
                               </div>
                               ) : null}
                             </div>
+                            {subOpen ? (
                             <div className="flex min-w-0 flex-col gap-1">
                               {subRows.map((row) => (
                                 <TypeToggle
@@ -438,6 +484,7 @@ export function LayersPanel({
                                 />
                               ))}
                             </div>
+                            ) : null}
                           </div>
                         );
                       })}
