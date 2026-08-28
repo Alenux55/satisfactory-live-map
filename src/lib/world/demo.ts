@@ -196,10 +196,10 @@ export function buildDemoWorld(tick: number): MapEntity[] {
       machine("ConstructorMk1", "production", cx, cy, 0, 8, 10, {
         id: `demo:constructor:${i}`,
         recipe: i % 2 === 0 ? "Iron Plate" : "Iron Rod",
-        clock: i === 0 ? 150 : 100,
-        powerShards: i === 0 ? 1 : undefined,
-        somersloops: i === 0 ? 1 : undefined,
-        production: i === 0 ? 300 : 100,
+        clock: i === 0 ? 150 : i === 1 ? 150 : 100,
+        powerShards: i === 0 || i === 1 ? 1 : undefined,
+        somersloops: i === 0 || i === 2 ? 1 : undefined,
+        production: i === 0 ? 300 : i === 1 ? 150 : i === 2 ? 200 : 100,
       }),
     );
     entities.push(belt(cx + 6, cy, cx + 18, cy, 2));
@@ -251,6 +251,9 @@ export function buildDemoWorld(tick: number): MapEntity[] {
       machine("GeneratorCoal_C", "power", OX + 24, OY + 64, 180, 16, 16, {
         id: "demo:coal",
         recipe: "Coal",
+        clock: 150,
+        powerShards: 1,
+        production: 150,
       }),
     );
   }

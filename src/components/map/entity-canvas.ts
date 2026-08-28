@@ -203,6 +203,35 @@ export function attachEntityCanvas(
       }
       ctx.restore();
 
+      const slooped = (entity.somersloops ?? 0) > 0;
+      const sharded = (entity.powerShards ?? 0) > 0;
+      if (slooped || sharded) {
+        ctx.globalAlpha = 1;
+        const badge = Math.max(3.5, Math.min(5.5, metersToPx(1.4)));
+        const spread = Math.max(w, h) * 0.22;
+        let bx = p.x + spread;
+        const by = p.y - spread;
+        if (slooped) {
+          ctx.beginPath();
+          ctx.arc(bx, by, badge, 0, Math.PI * 2);
+          ctx.fillStyle = "#e879f9";
+          ctx.fill();
+          ctx.strokeStyle = "#0b1220";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          bx += badge * 2 + 2;
+        }
+        if (sharded) {
+          ctx.beginPath();
+          ctx.arc(bx, by, badge, 0, Math.PI * 2);
+          ctx.fillStyle = "#facc15";
+          ctx.fill();
+          ctx.strokeStyle = "#0b1220";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+
       if (
         (showLabels &&
           (entity.category === "production" ||

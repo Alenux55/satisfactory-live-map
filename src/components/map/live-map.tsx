@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Menu, Layers } from "lucide-react";
 import type { ImageOverlay, Map as LeafletMap } from "leaflet";
 import { applyDelta } from "@/lib/world/diff";
+import { boostHighlightKey } from "@/lib/world/builder-menu";
 import {
   GRID_METERS,
   latLngToWorld,
@@ -50,6 +51,7 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
   const [hiddenTypes, setHiddenTypes] = useState<string[]>(initialUser.prefs.hiddenTypes ?? []);
   const [hiddenSubs, setHiddenSubs] = useState<string[]>(initialUser.prefs.hiddenSubs ?? []);
   const [highlight, setHighlight] = useState<string | null>(null);
+  const [boostPin, setBoostPin] = useState({ somersloops: false, shards: false });
   const [account, setAccount] = useState<PublicUser | null>(initialUser);
   const [prefsReady] = useState(true);
   const [selected, setSelected] = useState<MapEntity | null>(null);
@@ -176,8 +178,8 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
   }, [hiddenSubs]);
 
   useEffect(() => {
-    canvasRef.current?.setHighlight(highlight);
-  }, [highlight]);
+    canvasRef.current?.setHighlight(highlight ?? boostHighlightKey(boostPin));
+  }, [highlight, boostPin]);
 
   useEffect(() => {
     canvasRef.current?.setZRange({ min: zLower, max: zUpper });
@@ -497,6 +499,8 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
                     onHiddenTypes={setHiddenTypes}
                     onHiddenSubs={setHiddenSubs}
                     onHover={setHighlight}
+                    boostPin={boostPin}
+                    onBoostPin={setBoostPin}
                   />
                 </SheetContent>
               </Sheet>
@@ -539,6 +543,8 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
           onHiddenTypes={setHiddenTypes}
           onHiddenSubs={setHiddenSubs}
           onHover={setHighlight}
+          boostPin={boostPin}
+          onBoostPin={setBoostPin}
         />
       </aside>
     </div>

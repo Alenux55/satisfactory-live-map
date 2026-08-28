@@ -314,7 +314,33 @@ export function subcategoryHighlightKey(category: EntityCategory, subId: string)
   return `sub:${category}:${subId}`;
 }
 
+export const BOOST_HIGHLIGHT = {
+  somersloops: "prop:somersloops",
+  shards: "prop:shards",
+  boosted: "prop:boosted",
+} as const;
+
+export type BoostPin = { somersloops: boolean; shards: boolean };
+
+export function entityHasSomersloops(entity: MapEntity): boolean {
+  return (entity.somersloops ?? 0) > 0;
+}
+
+export function entityHasShards(entity: MapEntity): boolean {
+  return (entity.powerShards ?? 0) > 0;
+}
+
+export function boostHighlightKey(pin: BoostPin): string | null {
+  if (pin.somersloops && pin.shards) return BOOST_HIGHLIGHT.boosted;
+  if (pin.somersloops) return BOOST_HIGHLIGHT.somersloops;
+  if (pin.shards) return BOOST_HIGHLIGHT.shards;
+  return null;
+}
+
 export function matchesLayerHighlight(entity: MapEntity, highlight: string): boolean {
+  if (highlight === BOOST_HIGHLIGHT.somersloops) return entityHasSomersloops(entity);
+  if (highlight === BOOST_HIGHLIGHT.shards) return entityHasShards(entity);
+  if (highlight === BOOST_HIGHLIGHT.boosted) return entityHasSomersloops(entity) || entityHasShards(entity);
   if (highlight.startsWith("cat:")) return entity.category === highlight.slice(4);
   if (highlight.startsWith("sub:")) {
     return `${entity.category}:${subcategoryId(entity)}` === highlight.slice(4);
