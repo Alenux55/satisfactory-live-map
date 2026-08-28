@@ -134,6 +134,14 @@ export function isConveyorMonitor(type: string): boolean {
   return /ConveyorMonitor|ThroughputMonitor/i.test(type) && !/ResourceSink/i.test(type);
 }
 
+export function isBeltLike(type: string): boolean {
+  return /ConveyorBelt|ConveyorLift/i.test(type) && !/Monitor|Pole|Wall|Hole/i.test(type);
+}
+
+export function isPipeline(type: string): boolean {
+  return /Pipeline(?!Pump|Junction|Support|Wall|Floor)|PipeNetwork/i.test(type);
+}
+
 export function prettyType(type: string): string {
   return type
     .replace(/Mk(\d)/i, " Mk.$1")

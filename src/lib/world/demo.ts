@@ -43,15 +43,22 @@ function machine(
     throughput: extra?.throughput,
     throughputConfidence: extra?.throughputConfidence,
     throughputEstimated: extra?.throughputEstimated,
+    capacity: extra?.capacity,
+    cargo: extra?.cargo,
   };
 }
 
-function belt(x0: number, y0: number, x1: number, y1: number, mk = 1): MapEntity {
+function belt(x0: number, y0: number, x1: number, y1: number, mk = 1, cargo?: string[]): MapEntity {
+  const capacity = [0, 60, 120, 270, 480, 780, 1200][mk] ?? 60;
   return machine(`ConveyorBeltMk${mk}`, "logistics", x0, y0, 0, 2, 2, {
     path: [
       [x0, y0],
       [x1, y1],
     ],
+    capacity,
+    throughput: cargo?.length ? Math.round(capacity * 0.8) : 0,
+    throughputEstimated: true,
+    cargo,
   });
 }
 
@@ -169,7 +176,7 @@ export function buildDemoWorld(tick: number): MapEntity[] {
         recipe: "Iron Ore",
       }),
     );
-    entities.push(belt(mx + 10, my, OX - 4, my, 1));
+    entities.push(belt(mx + 10, my, OX - 4, my, 1, ["Iron Ore"]));
   }
 
   const smelterCount = Math.min(8, 2 + t);
@@ -185,9 +192,9 @@ export function buildDemoWorld(tick: number): MapEntity[] {
       }),
     );
     if (i < minerCount) {
-      entities.push(belt(OX - 4, OY + 8 + i * 22, sx - 4, sy, 1));
+      entities.push(belt(OX - 4, OY + 8 + i * 22, sx - 4, sy, 1, ["Iron Ore"]));
     }
-    entities.push(belt(sx + 4, sy, sx + 16, sy, 1));
+    entities.push(belt(sx + 4, sy, sx + 16, sy, 1, ["Iron Ingot"]));
   }
 
   const constructorCount = Math.min(10, Math.max(0, t - 1));
@@ -206,7 +213,7 @@ export function buildDemoWorld(tick: number): MapEntity[] {
         production: i === 0 ? 300 : i === 1 ? 150 : i === 2 ? 200 : 100,
       }),
     );
-    entities.push(belt(cx + 6, cy, cx + 18, cy, 2));
+    entities.push(belt(cx + 6, cy, cx + 18, cy, 2, i % 2 === 0 ? ["Iron Plate"] : ["Iron Rod"]));
   }
 
   if (t >= 3) {
@@ -218,18 +225,23 @@ export function buildDemoWorld(tick: number): MapEntity[] {
         id: "demo:storage:1",
       }),
     );
-    entities.push(belt(OX + 90, OY + 16, OX + 93, OY + 16, 2));
-    entities.push(belt(OX + 90, OY + 28, OX + 93, OY + 28, 2));
+    entities.push(belt(OX + 90, OY + 16, OX + 93, OY + 16, 2, ["Iron Plate"]));
+    entities.push(belt(OX + 90, OY + 28, OX + 93, OY + 28, 2, ["Iron Plate", "Iron Rod"]));
     entities.push(
       machine("ConveyorMonitor", "logistics", OX + 91.5, OY + 16, 0, 3, 3, {
         id: "demo:monitor:0",
         throughput: 120,
         throughputConfidence: 100,
+        capacity: 120,
+        cargo: ["Iron Plate"],
       }),
       machine("ConveyorMonitor", "logistics", OX + 91.5, OY + 28, 0, 3, 3, {
         id: "demo:monitor:1",
         throughput: 12,
         throughputConfidence: 70,
+        throughputEstimated: true,
+        capacity: 120,
+        cargo: ["Iron Plate", "Iron Rod"],
       }),
     );
   }
@@ -271,6 +283,9 @@ export function buildDemoWorld(tick: number): MapEntity[] {
         powerShards: 1,
         production: 150,
       }),
+      machine("PowerPoleWall", "power", OX + 40, OY + 64, 0, 1.5, 1.5, {
+        id: "demo:outlet",
+      }),
     );
   }
 
@@ -300,6 +315,8 @@ export function buildDemoWorld(tick: number): MapEntity[] {
           [OX - 20, OY + 64],
           [OX + 8, OY + 64],
         ],
+        capacity: 300,
+        cargo: ["Water"],
       }),
     );
   }

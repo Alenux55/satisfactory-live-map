@@ -378,6 +378,7 @@ export function LayersPanel({
                         cat.id,
                         (subs.length ? subs : cat.subs).map((sub) => sub.id),
                       );
+                      setCategory(cat.id, false);
                     }}
                   >
                     All off
@@ -399,107 +400,117 @@ export function LayersPanel({
                           hoverLeaveKey={categoryHighlightKey(cat.id)}
                         />
                       ))
-                    : (subs.length ? subs : cat.subs).map((sub) => {
+                    : (() => {
                         const source = cat.id === "crates" ? mergeCrateRows(rows) : rows;
-                        const subRows = source.filter((row) => row.sub === sub.id);
-                        if (!subRows.length) return null;
-                        const subKey = `${cat.id}:${sub.id}`;
-                        const collapsible = subRows.length > 1;
-                        const subOpen = !collapsible || openSubs.has(subKey);
-                        const subCount = subRows.reduce((sum, row) => sum + row.count, 0);
-                        return (
-                          <div
-                            key={sub.id}
-                            className="min-w-0"
-                            onMouseEnter={() => onHover(subcategoryHighlightKey(cat.id, sub.id))}
-                            onMouseLeave={() => onHover(categoryHighlightKey(cat.id))}
-                          >
-                            <div className="mb-1 flex min-w-0 items-center gap-2 rounded-md hover:bg-muted/40">
-                              {collapsible ? (
-                                <button
-                                  type="button"
-                                  className="flex min-w-0 flex-1 items-center gap-1 text-left"
-                                  aria-expanded={subOpen}
-                                  onClick={() => toggleSubOpen(cat.id, sub.id)}
-                                >
-                                  <ChevronDown
-                                    className={cn(
-                                      "size-3.5 shrink-0 text-muted-foreground transition-transform",
-                                      subOpen ? "" : "-rotate-90",
-                                    )}
-                                  />
-                                  <span className="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                                    {sub.label}
-                                  </span>
-                                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{subCount}</span>
-                                </button>
-                              ) : (
-                                <p className="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                                  {sub.label}
-                                </p>
-                              )}
-                              {collapsible ? (
-                              <div className="flex shrink-0 items-center gap-1">
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  className="h-6 px-2 text-[11px]"
-                                  onClick={() => {
-                                    setSub(cat.id, sub.id, true);
-                                    groupOn(subRows, cat.id);
-                                  }}
-                                >
-                                  All on
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  className="h-6 px-2 text-[11px]"
-                                  onClick={() => {
-                                    setSub(cat.id, sub.id, false);
-                                    groupOff(subRows, cat.id);
-                                  }}
-                                >
-                                  All off
-                                </Button>
-                                <Switch
-                                  size="sm"
-                                  className="shrink-0"
-                                  checked={!hiddenSubSet.has(`${cat.id}:${sub.id}`)}
-                                  onCheckedChange={(on) => setSub(cat.id, sub.id, on)}
-                                />
-                              </div>
-                              ) : null}
-                            </div>
-                            {subOpen ? (
-                            <div className="flex min-w-0 flex-col gap-1">
-                              {subRows.map((row) => (
-                                <TypeToggle
-                                  key={row.key}
-                                  row={row}
-                                  checked={!hidden.has(row.key)}
-                                  onChecked={(on) => toggleType(row.key, on, cat.id)}
-                                  onHover={onHover}
-                                  hoverLeaveKey={subcategoryHighlightKey(cat.id, sub.id)}
-                                />
-                              ))}
-                            </div>
-                            ) : null}
-                          </div>
+                        const visibleSubs = (subs.length ? subs : cat.subs).filter((sub) =>
+                          source.some((row) => row.sub === sub.id),
                         );
-                      })}
-                  {cat.id !== "resource"
-                    ? leftoverRows(rows, cat.subs).map((row) => (
-                        <TypeToggle
-                          key={row.key}
-                          row={row}
-                          checked={!hidden.has(row.key)}
-                          onChecked={(on) => toggleType(row.key, on, cat.id)}
-                          onHover={onHover}
-                          hoverLeaveKey={categoryHighlightKey(cat.id)}
-                        />
-                      ))
-                    : null}
+                        const leftovers = leftoverRows(rows, cat.subs);
+                        const flattenSubs = visibleSubs.length <= 1;
+                        const renderType = (row: TypeRow, leaveKey: string) => (
+                          <TypeToggle
+                            key={row.key}
+                            row={row}
+                            checked={!hidden.has(row.key)}
+                            onChecked={(on) => toggleType(row.key, on, cat.id)}
+                            onHover={onHover}
+                            hoverLeaveKey={leaveKey}
+                          />
+                        );
+                        if (flattenSubs) {
+                          const sub = visibleSubs[0];
+                          const subRows = sub ? source.filter((row) => row.sub === sub.id) : [];
+                          return (
+                            <>
+                              {subRows.map((row) => renderType(row, categoryHighlightKey(cat.id)))}
+                              {leftovers.map((row) => renderType(row, categoryHighlightKey(cat.id)))}
+                            </>
+                          );
+                        }
+                        return (
+                          <>
+                            {visibleSubs.map((sub) => {
+                              const subRows = source.filter((row) => row.sub === sub.id);
+                              if (!subRows.length) return null;
+                              const subKey = `${cat.id}:${sub.id}`;
+                              const subOpen = openSubs.has(subKey);
+                              const subCount = subRows.reduce((sum, row) => sum + row.count, 0);
+                              return (
+                                <div
+                                  key={sub.id}
+                                  className="min-w-0"
+                                  onMouseEnter={() => onHover(subcategoryHighlightKey(cat.id, sub.id))}
+                                  onMouseLeave={() => onHover(categoryHighlightKey(cat.id))}
+                                >
+                                  <div className="mb-1 flex min-w-0 items-center gap-2 rounded-md hover:bg-muted/40">
+                                    <button
+                                      type="button"
+                                      className="flex min-w-0 flex-1 items-center gap-1 text-left"
+                                      aria-expanded={subOpen}
+                                      onClick={() => toggleSubOpen(cat.id, sub.id)}
+                                    >
+                                      <ChevronDown
+                                        className={cn(
+                                          "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                                          subOpen ? "" : "-rotate-90",
+                                        )}
+                                      />
+                                      <span className="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                                        {sub.label}
+                                      </span>
+                                      <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                                        {subCount}
+                                      </span>
+                                    </button>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      {subRows.length > 1 ? (
+                                        <>
+                                          <Button
+                                            size="xs"
+                                            variant="outline"
+                                            className="h-6 px-2 text-[11px]"
+                                            onClick={() => {
+                                              setSub(cat.id, sub.id, true);
+                                              groupOn(subRows, cat.id);
+                                            }}
+                                          >
+                                            All on
+                                          </Button>
+                                          <Button
+                                            size="xs"
+                                            variant="outline"
+                                            className="h-6 px-2 text-[11px]"
+                                            onClick={() => {
+                                              setSub(cat.id, sub.id, false);
+                                              groupOff(subRows, cat.id);
+                                            }}
+                                          >
+                                            All off
+                                          </Button>
+                                        </>
+                                      ) : null}
+                                      <Switch
+                                        size="sm"
+                                        className="shrink-0"
+                                        checked={!hiddenSubSet.has(`${cat.id}:${sub.id}`)}
+                                        onCheckedChange={(on) => setSub(cat.id, sub.id, on)}
+                                      />
+                                    </div>
+                                  </div>
+                                  {subOpen ? (
+                                    <div className="flex min-w-0 flex-col gap-1">
+                                      {subRows.map((row) =>
+                                        renderType(row, subcategoryHighlightKey(cat.id, sub.id)),
+                                      )}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                            {leftovers.map((row) => renderType(row, categoryHighlightKey(cat.id)))}
+                          </>
+                        );
+                      })()}
                   {!rows.length && cat.id !== "resource" ? (
                     <p className="text-[11px] text-muted-foreground">None on this map.</p>
                   ) : null}

@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BoundedRangeSlider, Slider } from "@/components/ui/slider";
-import { displayName, isConveyorMonitor } from "@/lib/world/categorize";
+import { displayName, isConveyorMonitor, isPipeline } from "@/lib/world/categorize";
 import { formatBytes, formatDuration, formatInterval } from "@/lib/world/coords";
 import { RESOURCE_TYPE_LABELS } from "@/lib/world/resource";
+import { iconCandidatesForBuilding } from "@/lib/world/icons";
 import { layerIcons, layerLabel } from "@/lib/world/builder-menu";
 import {
   CATEGORY_LABELS,
@@ -572,7 +573,7 @@ export function ControlPanel({
                   <dd className="text-foreground">
                     {selected.throughputEstimated ? "est. " : ""}
                     {Math.round(selected.throughput)} /min
-                    {selected.throughputEstimated ? (
+                    {selected.throughputEstimated && isConveyorMonitor(selected.type) ? (
                       <span className="text-muted-foreground"> from belt</span>
                     ) : null}
                   </dd>
@@ -581,6 +582,31 @@ export function ControlPanel({
                 <>
                   <dt>Throughput</dt>
                   <dd className="text-muted-foreground">game does not save this rate</dd>
+                </>
+              ) : null}
+              {selected.capacity != null ? (
+                <>
+                  <dt>{isPipeline(selected.type) ? "Pipe max" : "Belt max"}</dt>
+                  <dd className="text-foreground">
+                    {selected.capacity} {isPipeline(selected.type) ? "m³/min" : "/min"}
+                  </dd>
+                </>
+              ) : null}
+              {selected.cargo?.length ? (
+                <>
+                  <dt>{isPipeline(selected.type) ? "Fluid" : "Cargo"}</dt>
+                  <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-foreground">
+                    {selected.cargo.map((name) => (
+                      <span key={name} className="inline-flex min-w-0 items-center gap-1">
+                        <WikiIcon
+                          candidates={iconCandidatesForBuilding(name)}
+                          label={name}
+                          className="size-4 shrink-0"
+                        />
+                        <span className="truncate">{name}</span>
+                      </span>
+                    ))}
+                  </dd>
                 </>
               ) : null}
               {selected.throughputConfidence != null ? (

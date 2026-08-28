@@ -79,17 +79,13 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "grid",
         label: "2. Power Distribution",
-        test: anyOf(/PowerPole|PowerLine|PowerTower/i),
+        test: (p, s) =>
+          /PowerPole(?!Wall)|PowerLine|PowerTower|PowerStorage|PowerSwitch|PriorityPower/i.test(p + s),
       },
       {
         id: "outlets",
         label: "3. Wall Outlets",
-        test: anyOf(/WallOutlet/i),
-      },
-      {
-        id: "storage",
-        label: "4. Power Storage",
-        test: anyOf(/PowerStorage|PowerSwitch|PriorityPower/i),
+        test: anyOf(/PowerPoleWall|WallOutlet/i),
       },
     ],
   },

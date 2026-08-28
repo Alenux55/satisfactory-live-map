@@ -6,7 +6,7 @@ import {
   type SaveComponent,
   type SaveEntity,
 } from "@etothepii/satisfactory-file-parser";
-import { categorize, displayName, footprintFor, isConveyorMonitor, shortType } from "./categorize";
+import { categorize, displayName, footprintFor, isBeltLike, isConveyorMonitor, isPipeline, shortType } from "./categorize";
 import { cmToMeters, yawFromQuaternion } from "./coords";
 import { parsePurity, resourceKind, RESOURCE_TYPE_LABELS } from "./resource";
 import { applyVanillaNodeCatalog } from "./vanilla-nodes";
@@ -296,12 +296,6 @@ function confidenceFromObject(entity: SaveObjectLike): number | undefined {
   return Math.round(Math.min(100, pct) * 10) / 10;
 }
 
-function sameActorPath(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  return a.endsWith(b) || b.endsWith(a);
-}
-
 const BELT_ITEMS_PER_MIN = [0, 60, 120, 270, 480, 780, 1200] as const;
 
 function beltCapacityPerMin(typePath: string): number {
@@ -313,36 +307,114 @@ function beltCapacityPerMin(typePath: string): number {
 /** Item pitch on a full belt, in save units (cm). */
 const BELT_ITEM_PITCH_CM = 120;
 
-function estimateMonitorThroughput(obj: SaveEntity, byName: Map<string, SaveObjectLike>): number | undefined {
-  const snapped =
-    pathNameOf(propValue(obj, "mSnappedSplineBuildable")) ??
-    pathNameOf(obj.properties?.mSnappedSplineBuildable) ??
-    pathNameOf(propValue(obj, "mConveyorBase"));
-  if (!snapped) return undefined;
-  for (const candidate of byName.values()) {
-    if (!isSaveEntity(candidate)) continue;
-    const special = asRecord(candidate.specialProperties);
+function cargoNameFromPath(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  const short = shortType(path).replace(/^Desc_/, "");
+  if (!short) return undefined;
+  return displayName(short);
+}
+
+function uniqueNames(names: Iterable<string>): string[] {
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
+type BeltFlow = {
+  throughput?: number;
+  throughputEstimated?: boolean;
+  capacity: number;
+  cargo: string[];
+};
+
+function rememberFlow(into: Map<string, BeltFlow>, ref: string, flow: BeltFlow): void {
+  if (!ref) return;
+  into.set(ref, flow);
+  const tail = ref.split(".").pop();
+  if (tail && tail !== ref) into.set(tail, flow);
+}
+
+function lookupFlow(flows: Map<string, BeltFlow>, ref: string | undefined): BeltFlow | undefined {
+  if (!ref) return undefined;
+  return flows.get(ref) ?? flows.get(ref.split(".").pop() ?? "");
+}
+
+function itemNameFromBeltItem(raw: unknown): string | undefined {
+  const rec = asRecord(raw);
+  const item = asRecord(rec?.item) ?? rec;
+  const path =
+    pathNameOf(item?.itemReference) ??
+    pathNameOf(asRecord(item?.itemReference)?.itemReference) ??
+    pathNameOf(item);
+  return cargoNameFromPath(path);
+}
+
+function beltFlowFromSegment(rec: Record<string, unknown>, items: unknown[]): BeltFlow {
+  const ref = pathNameOf(rec.beltRef) ?? "";
+  const capacity = beltCapacityPerMin(ref);
+  const length = Math.abs(num(rec.endsAtLength) - num(rec.startsAtLength));
+  const first = num(rec.firstItemIndex, -1);
+  const last = num(rec.lastItemIndex, -1);
+  const slice =
+    first >= 0 && last >= first ? items.slice(first, last + 1) : [];
+  const cargo = uniqueNames(slice.map(itemNameFromBeltItem).filter((name): name is string => Boolean(name)));
+  const extras: BeltFlow = { capacity, cargo };
+  if (length > 1) {
+    const maxItems = Math.max(1, length / BELT_ITEM_PITCH_CM);
+    extras.throughput = finiteRate(Math.min(capacity, (slice.length / maxItems) * capacity));
+    extras.throughputEstimated = extras.throughput != null;
+  }
+  return extras;
+}
+
+function collectBeltFlows(byName: Map<string, SaveObjectLike>): Map<string, BeltFlow> {
+  const flows = new Map<string, BeltFlow>();
+  for (const obj of byName.values()) {
+    if (!isSaveEntity(obj)) continue;
+    const special = asRecord(obj.specialProperties);
     if (special?.type !== "ConveyorChainActorSpecialProperties") continue;
+    const items = Array.isArray(special.items) ? special.items : [];
     const belts = Array.isArray(special.beltsInChain) ? special.beltsInChain : [];
     for (const belt of belts) {
       const rec = asRecord(belt);
       if (!rec) continue;
       const ref = pathNameOf(rec.beltRef) ?? "";
-      if (!sameActorPath(ref, snapped)) continue;
-      const length = Math.abs(num(rec.endsAtLength) - num(rec.startsAtLength));
-      if (length <= 1) return undefined;
-      const first = num(rec.firstItemIndex, -1);
-      const last = num(rec.lastItemIndex, -1);
-      const count = first >= 0 && last >= first ? last - first + 1 : 0;
-      const cap = beltCapacityPerMin(ref);
-      const maxItems = Math.max(1, length / BELT_ITEM_PITCH_CM);
-      return finiteRate(Math.min(cap, (count / maxItems) * cap));
+      rememberFlow(flows, ref, beltFlowFromSegment(rec, items));
     }
   }
-  return undefined;
+  return flows;
 }
 
-function monitorExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Partial<MapEntity> {
+function collectPipeFluids(byName: Map<string, SaveObjectLike>): Map<number, string> {
+  const fluids = new Map<number, string>();
+  for (const obj of byName.values()) {
+    if (!/PipeNetwork/i.test(obj.typePath ?? "")) continue;
+    const id = floatProp(obj, "mPipeNetworkID") ?? floatProp(obj, "mID");
+    const name =
+      cargoNameFromPath(pathNameOf(propValue(obj, "mFluidDescriptor"))) ??
+      cargoNameFromPath(pathNameOf(obj.properties?.mFluidDescriptor));
+    if (typeof id === "number" && Number.isFinite(id) && name) fluids.set(id, name);
+  }
+  return fluids;
+}
+
+const PIPE_M3_PER_MIN = [0, 300, 600] as const;
+
+function pipeCapacityPerMin(typePath: string): number {
+  const mk = typePath.match(/Mk(\d)|MK(\d)/i);
+  const n = mk ? Number(mk[1] ?? mk[2]) : /MK2|Mk2/i.test(typePath) ? 2 : 1;
+  return PIPE_M3_PER_MIN[n] ?? 300;
+}
+
+function flowFromMap(flow: BeltFlow | undefined): Partial<MapEntity> {
+  if (!flow) return {};
+  const extras: Partial<MapEntity> = {};
+  if (flow.throughput != null) extras.throughput = flow.throughput;
+  if (flow.throughputEstimated) extras.throughputEstimated = true;
+  if (flow.capacity) extras.capacity = flow.capacity;
+  if (flow.cargo.length) extras.cargo = flow.cargo;
+  return extras;
+}
+
+function monitorExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>, beltFlows: Map<string, BeltFlow>): Partial<MapEntity> {
   if (!isConveyorMonitor(obj.typePath)) return {};
   const sources: SaveObjectLike[] = [obj];
   for (const ref of obj.components ?? []) {
@@ -357,13 +429,15 @@ function monitorExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Pa
     throughput ??= throughputFromObject(source);
     throughputConfidence ??= confidenceFromObject(source);
   }
+  const snapped =
+    pathNameOf(propValue(obj, "mSnappedSplineBuildable")) ??
+    pathNameOf(obj.properties?.mSnappedSplineBuildable) ??
+    pathNameOf(propValue(obj, "mConveyorBase"));
+  const fromBelt = lookupFlow(beltFlows, snapped);
   let throughputEstimated = false;
-  if (throughput == null) {
-    const estimated = estimateMonitorThroughput(obj, byName);
-    if (estimated != null) {
-      throughput = estimated;
-      throughputEstimated = true;
-    }
+  if (throughput == null && fromBelt?.throughput != null) {
+    throughput = fromBelt.throughput;
+    throughputEstimated = true;
   }
   if (monitorSamples < 3) {
     monitorSamples += 1;
@@ -374,16 +448,57 @@ function monitorExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Pa
       throughput: throughput ?? null,
       confidence: throughputConfidence ?? null,
       estimated: throughputEstimated,
+      cargo: fromBelt?.cargo ?? [],
     });
   }
-  const extras: Partial<MapEntity> = {};
+  const extras: Partial<MapEntity> = { ...flowFromMap(fromBelt) };
   if (throughput != null) extras.throughput = throughput;
   if (throughputConfidence != null) extras.throughputConfidence = throughputConfidence;
   if (throughputEstimated) extras.throughputEstimated = true;
+  else delete extras.throughputEstimated;
   return extras;
 }
 
-function factoryExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Partial<MapEntity> {
+function pipeExtras(
+  obj: SaveEntity,
+  byName: Map<string, SaveObjectLike>,
+  pipeFluids: Map<number, string>,
+): Partial<MapEntity> {
+  if (!isPipeline(obj.typePath) && !isPipeline(shortType(obj.typePath))) return {};
+  const extras: Partial<MapEntity> = { capacity: pipeCapacityPerMin(obj.typePath) };
+  const netId = floatProp(obj, "mPipeNetworkID") ?? floatProp(obj, "mNetworkID");
+  let fluid: string | undefined;
+  if (typeof netId === "number") fluid = pipeFluids.get(netId);
+  fluid ??=
+    cargoNameFromPath(pathNameOf(propValue(obj, "mFluidDescriptor"))) ??
+    cargoNameFromPath(pathNameOf(obj.properties?.mFluidDescriptor));
+  if (!fluid) {
+    for (const ref of obj.components ?? []) {
+      const path = typeof ref === "string" ? ref : pathNameOf(ref);
+      if (!path) continue;
+      const child = lookupByName(byName, path);
+      if (!child) continue;
+      fluid =
+        cargoNameFromPath(pathNameOf(propValue(child, "mFluidDescriptor"))) ??
+        cargoNameFromPath(pathNameOf(child.properties?.mFluidDescriptor));
+      if (fluid) break;
+      const childNet = floatProp(child, "mPipeNetworkID") ?? floatProp(child, "mNetworkID");
+      if (typeof childNet === "number") {
+        fluid = pipeFluids.get(childNet);
+        if (fluid) break;
+      }
+    }
+  }
+  if (fluid) extras.cargo = [fluid];
+  return extras;
+}
+
+function factoryExtras(
+  obj: SaveEntity,
+  byName: Map<string, SaveObjectLike>,
+  beltFlows: Map<string, BeltFlow>,
+  pipeFluids: Map<number, string>,
+): Partial<MapEntity> {
   const extras: Partial<MapEntity> = {};
   const potential = floatProp(obj, "mCurrentPotential") ?? floatProp(obj, "mPendingPotential");
   const boost = floatProp(obj, "mCurrentProductionBoost") ?? floatProp(obj, "mPendingProductionBoost");
@@ -431,7 +546,12 @@ function factoryExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Pa
       if (fromRecipe !== "unknown") extras.resource = fromRecipe;
     }
   }
-  Object.assign(extras, monitorExtras(obj, byName));
+  Object.assign(extras, monitorExtras(obj, byName, beltFlows));
+  Object.assign(extras, pipeExtras(obj, byName, pipeFluids));
+  if (isBeltLike(obj.typePath) || isBeltLike(shortType(obj.typePath))) {
+    Object.assign(extras, flowFromMap(lookupFlow(beltFlows, obj.instanceName)));
+    extras.capacity ??= beltCapacityPerMin(obj.typePath);
+  }
   return extras;
 }
 
@@ -643,7 +763,7 @@ function typeFromInstance(path: string): string | undefined {
   return undefined;
 }
 
-function extractConveyorChain(obj: SaveEntity, into: MapEntity[]): void {
+function extractConveyorChain(obj: SaveEntity, into: MapEntity[], beltFlows: Map<string, BeltFlow>): void {
   const special = asRecord(obj.specialProperties);
   if (!special || special.type !== "ConveyorChainActorSpecialProperties") return;
   const belts = Array.isArray(special.beltsInChain) ? special.beltsInChain : [];
@@ -659,9 +779,10 @@ function extractConveyorChain(obj: SaveEntity, into: MapEntity[]): void {
     if (path.length < 2) return;
     const start = path[0];
     const beltRef = pathNameOf(rec.beltRef) ?? `${obj.instanceName}:${i}`;
+    const type = typeFromInstance(beltRef) ?? "ConveyorBeltMk1";
     into.push({
       id: `belt:${beltRef}`,
-      type: typeFromInstance(beltRef) ?? "ConveyorBeltMk1",
+      type,
       category: "logistics",
       x: start[0],
       y: start[1],
@@ -670,6 +791,8 @@ function extractConveyorChain(obj: SaveEntity, into: MapEntity[]): void {
       w: 2,
       h: 2,
       path: downsample(path),
+      ...flowFromMap(lookupFlow(beltFlows, beltRef) ?? beltFlowFromSegment(rec, Array.isArray(special.items) ? special.items : [])),
+      capacity: beltCapacityPerMin(beltRef || type),
     });
   });
 }
@@ -725,6 +848,9 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
     }
   }
 
+  const beltFlows = collectBeltFlows(byName);
+  const pipeFluids = collectPipeFluids(byName);
+
   for (const level of Object.values(save.levels ?? {})) {
     for (const obj of level.objects ?? []) {
       try {
@@ -733,7 +859,7 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
           extractLightweight(obj, entities);
           continue;
         }
-        extractConveyorChain(obj, entities);
+        extractConveyorChain(obj, entities, beltFlows);
         extractPowerLine(obj, entities);
         if (isResourceNodeActor(obj.typePath)) {
           const node = extractResourceNode(obj, byName);
@@ -748,7 +874,7 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
         if (/ConveyorChainActor|LightweightBuildable/i.test(obj.typePath)) continue;
         const translation = obj.transform?.translation;
         if (!translation) continue;
-        const extras: Partial<MapEntity> = { ...factoryExtras(obj, byName) };
+        const extras: Partial<MapEntity> = { ...factoryExtras(obj, byName, beltFlows, pipeFluids) };
         const recipe = recipeFrom(obj);
         if (recipe) extras.recipe = recipe;
         const name = playerName(obj);

@@ -68,6 +68,10 @@ export type MapEntity = {
   throughputConfidence?: number;
   /** True when items/min was estimated from the snapped belt, not the monitor's own average. */
   throughputEstimated?: boolean;
+  /** Belt or pipe max rate (items/min or m³/min). */
+  capacity?: number;
+  /** Distinct items on a belt, or the fluid in a pipe. */
+  cargo?: string[];
 };
 
 export type SaveHeaderInfo = {
