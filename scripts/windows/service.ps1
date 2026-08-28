@@ -93,8 +93,22 @@ function Get-MapAction {
 }
 
 function Update-TaskAction {
-  if (-not (Get-Task)) { return }
-  Set-ScheduledTask -TaskName $TaskName -Action (Get-MapAction) | Out-Null
+  $task = Get-Task
+  if (-not $task) { return }
+  try {
+    $desired = Get-MapAction
+    $current = @($task.Actions)[0]
+    if (
+      $current -and
+      $current.Execute -eq $desired.Execute -and
+      [string]$current.Arguments -eq [string]$desired.Arguments
+    ) {
+      return
+    }
+    Set-ScheduledTask -TaskName $TaskName -Action $desired | Out-Null
+  } catch {
+    Write-Warning "Could not update scheduled task '$TaskName' ($($_.Exception.Message.Trim())). Start will still run. Re-run Install as the Windows account that owns the task if the launcher path changed."
+  }
 }
 
 function Stop-ProcessTree {
@@ -174,24 +188,36 @@ function Invoke-Uninstall {
   Write-Host "Removed scheduled task '$TaskName'."
 }
 
+function Start-MapProcess {
+  try {
+    $exe = Get-LauncherExe
+    $node = (Get-Command node -ErrorAction Stop).Source
+    Start-Process -FilePath $exe -WorkingDirectory $RepoRoot -WindowStyle Hidden `
+      -ArgumentList @("-Repo", $RepoRoot, "-Port", "$Port", "-Node", $node)
+  } catch {
+    Write-Warning "$_ Falling back to a hidden PowerShell host."
+    Start-Process -FilePath $PowerShell -WorkingDirectory $RepoRoot -WindowStyle Hidden `
+      -ArgumentList (Get-HiddenPowerShellArgs)
+  }
+}
+
 function Invoke-Start {
   Update-TaskAction
   $task = Get-Task
+  $startedTask = $false
   if ($task) {
-    Start-ScheduledTask -TaskName $TaskName
-    Write-Host "Started scheduled task '$TaskName' (no console window)."
+    try {
+      Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+      $startedTask = $true
+      Write-Host "Started scheduled task '$TaskName' (no console window)."
+    } catch {
+      Write-Warning "Could not start scheduled task '$TaskName' ($($_.Exception.Message.Trim())). Starting the map process directly."
+    }
   } else {
     Write-Host "No scheduled task yet. Starting in the background. Use Install for boot."
-    try {
-      $exe = Get-LauncherExe
-      $node = (Get-Command node -ErrorAction Stop).Source
-      Start-Process -FilePath $exe -WorkingDirectory $RepoRoot -WindowStyle Hidden `
-        -ArgumentList @("-Repo", $RepoRoot, "-Port", "$Port", "-Node", $node)
-    } catch {
-      Write-Warning "$_ Falling back to a hidden PowerShell host."
-      Start-Process -FilePath $PowerShell -WorkingDirectory $RepoRoot -WindowStyle Hidden `
-        -ArgumentList (Get-HiddenPowerShellArgs)
-    }
+  }
+  if (-not $startedTask) {
+    Start-MapProcess
   }
   if (Wait-Port -Open -Seconds 45) {
     Write-Host "Listening on 0.0.0.0:$Port"

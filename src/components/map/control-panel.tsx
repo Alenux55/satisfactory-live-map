@@ -23,6 +23,7 @@ import {
   type MapEntity,
 } from "@/lib/world/types";
 import type { PublicUser } from "@/lib/auth/types";
+import { BrandMark } from "@/components/brand-mark";
 import { Section } from "@/components/map/section";
 import { WikiIcon } from "@/components/map/wiki-icon";
 import { FolderPicker, nameFromSaveDir } from "@/components/map/folder-picker";
@@ -33,6 +34,61 @@ import {
   lookupRecipe,
   perMinute,
 } from "@/lib/world/recipes";
+
+function parseHeight(raw: string, fallback: number): number {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? Math.round(parsed) : fallback;
+}
+
+function HeightMetersInput({
+  id,
+  label,
+  value,
+  min,
+  max,
+  onCommit,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (next: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(Math.round(value)));
+
+  useEffect(() => {
+    setDraft(String(Math.round(value)));
+  }, [value]);
+
+  const commit = () => {
+    const next = Math.min(max, Math.max(min, parseHeight(draft, value)));
+    onCommit(next);
+    setDraft(String(next));
+  };
+
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <Label htmlFor={id} className="text-[10px] font-normal text-muted-foreground">
+        {label}
+      </Label>
+      <div className="flex items-center gap-1">
+        <Input
+          id={id}
+          inputMode="numeric"
+          className="h-7 w-[5.75rem] font-mono text-[11px]"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+        />
+        <span className="font-mono text-[11px] text-muted-foreground">m</span>
+      </div>
+    </div>
+  );
+}
 
 type Props = {
   status: HubStatus | null;
@@ -102,9 +158,7 @@ export function ControlPanel({
       <div className="flex flex-col gap-5 px-5 py-4 pb-10">
         <div>
           <div className="flex items-center justify-between gap-2">
-            <p className="font-heading text-[11px] tracking-[0.22em] text-primary uppercase">
-              FICSIT Cartography
-            </p>
+            <BrandMark />
             <Badge variant={live ? "default" : "secondary"} className="gap-1 font-mono text-[10px]">
               <Radio className={live ? "size-3 animate-pulse" : "size-3"} />
               {status?.status ?? "boot"}
@@ -416,9 +470,23 @@ export function ControlPanel({
           }
         >
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
-            <span className="text-foreground">{zLower.toFixed(0)} m</span>
-            <span className="text-foreground">{zUpper.toFixed(0)} m</span>
+          <div className="flex items-end justify-between gap-3">
+            <HeightMetersInput
+              id="slice-lower"
+              label="Lower"
+              value={zLower}
+              min={zExtent.min}
+              max={Math.max(zExtent.min, zUpper - 1)}
+              onCommit={(lo) => onZRange(lo, zUpper)}
+            />
+            <HeightMetersInput
+              id="slice-upper"
+              label="Upper"
+              value={zUpper}
+              min={Math.min(zExtent.max, zLower + 1)}
+              max={zExtent.max}
+              onCommit={(hi) => onZRange(zLower, hi)}
+            />
           </div>
           <Slider
             min={zExtent.min}
@@ -434,7 +502,7 @@ export function ControlPanel({
             }}
           />
           <p className="text-[11px] text-muted-foreground">
-            Hide buildings outside this Z range (sea level is 0). Drag the lower and upper handles; they
+            Hide buildings outside this Z range (sea level is 0). Type a height or drag the handles; they
             cannot cross. Same idea as SCIM&apos;s height bounds, implemented here on your save data.
           </p>
         </div>

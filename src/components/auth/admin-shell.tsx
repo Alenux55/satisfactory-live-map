@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +12,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 p-6">
       <div>
-        <p className="font-heading text-[11px] tracking-[0.22em] text-primary uppercase">FICSIT Cartography</p>
+        <BrandMark />
         <div className="mt-1 flex items-end justify-between gap-3">
           <h1 className="font-heading text-2xl">Admin</h1>
           <Button size="sm" variant="outline" onClick={() => router.push("/")}>
