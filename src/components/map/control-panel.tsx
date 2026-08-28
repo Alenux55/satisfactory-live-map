@@ -569,12 +569,18 @@ export function ControlPanel({
               {selected.throughput != null ? (
                 <>
                   <dt>Throughput</dt>
-                  <dd className="text-foreground">{Math.round(selected.throughput)} /min</dd>
+                  <dd className="text-foreground">
+                    {selected.throughputEstimated ? "est. " : ""}
+                    {Math.round(selected.throughput)} /min
+                    {selected.throughputEstimated ? (
+                      <span className="text-muted-foreground"> from belt</span>
+                    ) : null}
+                  </dd>
                 </>
               ) : isConveyorMonitor(selected.type) ? (
                 <>
                   <dt>Throughput</dt>
-                  <dd className="text-muted-foreground">not stored in this save</dd>
+                  <dd className="text-muted-foreground">game does not save this rate</dd>
                 </>
               ) : null}
               {selected.throughputConfidence != null ? (

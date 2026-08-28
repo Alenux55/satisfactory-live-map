@@ -296,6 +296,52 @@ function confidenceFromObject(entity: SaveObjectLike): number | undefined {
   return Math.round(Math.min(100, pct) * 10) / 10;
 }
 
+function sameActorPath(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.endsWith(b) || b.endsWith(a);
+}
+
+const BELT_ITEMS_PER_MIN = [0, 60, 120, 270, 480, 780, 1200] as const;
+
+function beltCapacityPerMin(typePath: string): number {
+  const mk = typePath.match(/Mk(\d)/i);
+  const n = mk ? Number(mk[1]) : 1;
+  return BELT_ITEMS_PER_MIN[n] ?? 60;
+}
+
+/** Item pitch on a full belt, in save units (cm). */
+const BELT_ITEM_PITCH_CM = 120;
+
+function estimateMonitorThroughput(obj: SaveEntity, byName: Map<string, SaveObjectLike>): number | undefined {
+  const snapped =
+    pathNameOf(propValue(obj, "mSnappedSplineBuildable")) ??
+    pathNameOf(obj.properties?.mSnappedSplineBuildable) ??
+    pathNameOf(propValue(obj, "mConveyorBase"));
+  if (!snapped) return undefined;
+  for (const candidate of byName.values()) {
+    if (!isSaveEntity(candidate)) continue;
+    const special = asRecord(candidate.specialProperties);
+    if (special?.type !== "ConveyorChainActorSpecialProperties") continue;
+    const belts = Array.isArray(special.beltsInChain) ? special.beltsInChain : [];
+    for (const belt of belts) {
+      const rec = asRecord(belt);
+      if (!rec) continue;
+      const ref = pathNameOf(rec.beltRef) ?? "";
+      if (!sameActorPath(ref, snapped)) continue;
+      const length = Math.abs(num(rec.endsAtLength) - num(rec.startsAtLength));
+      if (length <= 1) return undefined;
+      const first = num(rec.firstItemIndex, -1);
+      const last = num(rec.lastItemIndex, -1);
+      const count = first >= 0 && last >= first ? last - first + 1 : 0;
+      const cap = beltCapacityPerMin(ref);
+      const maxItems = Math.max(1, length / BELT_ITEM_PITCH_CM);
+      return finiteRate(Math.min(cap, (count / maxItems) * cap));
+    }
+  }
+  return undefined;
+}
+
 function monitorExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Partial<MapEntity> {
   if (!isConveyorMonitor(obj.typePath)) return {};
   const sources: SaveObjectLike[] = [obj];
@@ -311,6 +357,14 @@ function monitorExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Pa
     throughput ??= throughputFromObject(source);
     throughputConfidence ??= confidenceFromObject(source);
   }
+  let throughputEstimated = false;
+  if (throughput == null) {
+    const estimated = estimateMonitorThroughput(obj, byName);
+    if (estimated != null) {
+      throughput = estimated;
+      throughputEstimated = true;
+    }
+  }
   if (monitorSamples < 3) {
     monitorSamples += 1;
     debugLog("conveyor monitor", {
@@ -319,11 +373,13 @@ function monitorExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Pa
       props: Object.keys(obj.properties ?? {}),
       throughput: throughput ?? null,
       confidence: throughputConfidence ?? null,
+      estimated: throughputEstimated,
     });
   }
   const extras: Partial<MapEntity> = {};
   if (throughput != null) extras.throughput = throughput;
   if (throughputConfidence != null) extras.throughputConfidence = throughputConfidence;
+  if (throughputEstimated) extras.throughputEstimated = true;
   return extras;
 }
 

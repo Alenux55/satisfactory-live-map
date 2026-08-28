@@ -21,6 +21,7 @@ export function fingerprint(entity: MapEntity): string {
     entity.production ?? "",
     entity.throughput ?? "",
     entity.throughputConfidence ?? "",
+    entity.throughputEstimated ? "e" : "",
     path,
   ].join("|");
 }

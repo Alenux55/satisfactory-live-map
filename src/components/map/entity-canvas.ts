@@ -291,7 +291,11 @@ export function attachEntityCanvas(
         ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.globalAlpha = 1;
-        ctx.fillText(`${Math.round(entity.throughput)}/min`, p.x, p.y - h / 2 - 4);
+        ctx.fillText(
+          `${entity.throughputEstimated ? "~" : ""}${Math.round(entity.throughput)}/min`,
+          p.x,
+          p.y - h / 2 - 4,
+        );
       }
       ctx.globalAlpha = 1;
     }

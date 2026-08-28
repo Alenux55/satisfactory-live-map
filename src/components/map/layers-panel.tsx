@@ -225,6 +225,12 @@ export function LayersPanel({
     );
   };
 
+  const hideSubs = (catId: string, subIds: string[]) => {
+    const next = new Set(hiddenSubSet);
+    for (const id of subIds) next.add(`${catId}:${id}`);
+    onHiddenSubs([...next]);
+  };
+
   const applyBoostPin = (next: BoostPin) => {
     onBoostPin(next);
     if (!boostPinIsActive(next)) return;
@@ -345,7 +351,13 @@ export function LayersPanel({
                     size="xs"
                     variant="outline"
                     className="h-6 px-2 text-[11px]"
-                    onClick={() => groupOff(rows, cat.id)}
+                    onClick={() => {
+                      groupOff(rows, cat.id);
+                      hideSubs(
+                        cat.id,
+                        (subs.length ? subs : cat.subs).map((sub) => sub.id),
+                      );
+                    }}
                   >
                     All off
                   </Button>
@@ -398,7 +410,10 @@ export function LayersPanel({
                                   size="xs"
                                   variant="outline"
                                   className="h-6 px-2 text-[11px]"
-                                  onClick={() => groupOff(subRows, cat.id)}
+                                  onClick={() => {
+                                    setSub(cat.id, sub.id, false);
+                                    groupOff(subRows, cat.id);
+                                  }}
                                 >
                                   All off
                                 </Button>

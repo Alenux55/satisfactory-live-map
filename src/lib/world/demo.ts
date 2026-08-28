@@ -42,6 +42,7 @@ function machine(
     production: extra?.production,
     throughput: extra?.throughput,
     throughputConfidence: extra?.throughputConfidence,
+    throughputEstimated: extra?.throughputEstimated,
   };
 }
 
