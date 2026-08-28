@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-  Manage the live map as a Windows Scheduled Task (start, stop, rebuild, boot).
+  Manage the live map as a Windows Scheduled Task (not a Windows Service).
 
     powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Install
     powershell -ExecutionPolicy Bypass -File .\scripts\windows\service.ps1 Status
@@ -81,15 +81,24 @@ function Get-HiddenPowerShellArgs {
 }
 
 function Get-MapAction {
-  try {
-    $exe = Get-LauncherExe
-    $node = (Get-Command node -ErrorAction Stop).Source
-    $arg = "-Repo `"$RepoRoot`" -Port $Port -Node `"$node`""
-    return New-ScheduledTaskAction -Execute $exe -Argument $arg -WorkingDirectory $RepoRoot
-  } catch {
-    Write-Warning "$_ Falling back to a hidden PowerShell host."
-    return New-ScheduledTaskAction -Execute $PowerShell -Argument (Get-HiddenPowerShellArgs) -WorkingDirectory $RepoRoot
-  }
+  $exe = Get-LauncherExe
+  $node = (Get-Command node -ErrorAction Stop).Source
+  $arg = "-Repo `"$RepoRoot`" -Port $Port -Node `"$node`""
+  return New-ScheduledTaskAction -Execute $exe -Argument $arg -WorkingDirectory $RepoRoot
+}
+
+function Get-TaskActionExecute {
+  $task = Get-Task
+  if (-not $task) { return $null }
+  $action = @($task.Actions)[0]
+  if (-not $action) { return $null }
+  return [string]$action.Execute
+}
+
+function Test-TaskUsesPowerShell {
+  $execute = Get-TaskActionExecute
+  if (-not $execute) { return $false }
+  return $execute -match '(?i)powershell(\.exe)?$'
 }
 
 function Update-TaskAction {
@@ -178,7 +187,9 @@ function Invoke-Install {
     -Principal $principal `
     -Description "Satisfactory live map sidecar. Binds 0.0.0.0:$Port. Node=$node" |
     Out-Null
-  Write-Host "Installed scheduled task '$TaskName' as $env:USERNAME (AtStartup + AtLogOn, restart on crash)."
+  Write-Host "Installed scheduled task '$TaskName' as $env:USERNAME (Task Scheduler, not services.msc)."
+  Write-Host "Host:    $(Get-LauncherExe)"
+  Write-Host "Task Manager → Processes should show FicsitLiveMap, not Windows PowerShell."
   Invoke-Start
 }
 
@@ -205,11 +216,13 @@ function Invoke-Start {
   Update-TaskAction
   $task = Get-Task
   $startedTask = $false
-  if ($task) {
+  if ($task -and (Test-TaskUsesPowerShell)) {
+    Write-Warning "Scheduled task '$TaskName' still launches PowerShell. Starting FicsitLiveMap.exe instead. Re-run Install as the account that owns the task to fix boot-start."
+  } elseif ($task) {
     try {
       Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop
       $startedTask = $true
-      Write-Host "Started scheduled task '$TaskName' (no console window)."
+      Write-Host "Started scheduled task '$TaskName' ($((Get-TaskActionExecute)))."
     } catch {
       Write-Warning "Could not start scheduled task '$TaskName' ($($_.Exception.Message.Trim())). Starting the map process directly."
     }
@@ -265,9 +278,20 @@ function Invoke-Status {
   $task = Get-Task
   if ($task) {
     $info = $task | Get-ScheduledTaskInfo
+    $execute = Get-TaskActionExecute
     Write-Host "Task:    $TaskName  state=$($task.State)  last=$($info.LastTaskResult)  lastRun=$($info.LastRunTime)"
+    Write-Host "Action:  $execute"
+    if (Test-TaskUsesPowerShell) {
+      Write-Warning "That action is PowerShell, so Task Manager shows Windows PowerShell. Re-run Install as the Windows account that owns the task."
+    }
   } else {
     Write-Host "Task:    (not installed)  run Install to start at boot"
+  }
+  $hostProc = @(Get-Process -Name "FicsitLiveMap" -ErrorAction SilentlyContinue)
+  if ($hostProc.Count -gt 0) {
+    Write-Host "Host:    FicsitLiveMap  pid=$($hostProc[0].Id)"
+  } else {
+    Write-Host "Host:    (no FicsitLiveMap.exe process)"
   }
   if (Test-Path $PidFile) {
     Write-Host "PidFile: $(Get-Content -Raw $PidFile)"
