@@ -1,6 +1,6 @@
 import type { LatLng, Map as LeafletMap, LeafletMouseEvent, Point, ZoomAnimEvent } from "leaflet";
 import type { EntityCategory, MapEntity } from "@/lib/world/types";
-import { CATEGORY_COLORS } from "@/lib/world/categorize";
+import { CATEGORY_COLORS, isConveyorMonitor } from "@/lib/world/categorize";
 import { worldToLatLng } from "@/lib/world/coords";
 import { PURITY_COLORS, CLAIMED_RING_COLOR, SELECT_RING_COLOR } from "@/lib/world/resource";
 import {
@@ -286,6 +286,12 @@ export function attachEntityCanvas(
         ctx.textAlign = "center";
         ctx.globalAlpha = 1;
         ctx.fillText(entity.label || entity.type, p.x, p.y - (entity.category === "player" ? 14 : h / 2 - 4));
+      } else if (showLabels && isConveyorMonitor(entity.type) && entity.throughput != null) {
+        ctx.fillStyle = "#fff7ed";
+        ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.globalAlpha = 1;
+        ctx.fillText(`${Math.round(entity.throughput)}/min`, p.x, p.y - h / 2 - 4);
       }
       ctx.globalAlpha = 1;
     }

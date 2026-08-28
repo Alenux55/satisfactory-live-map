@@ -28,6 +28,8 @@ const BUILDING_ICON_ALIASES: Record<string, string[]> = {
   AwesomeShop: ["AWESOME_Shop.png"],
   BlueprintDesigner: ["Blueprint_Designer.png"],
   Conveyor: ["Conveyor_Belt_Mk.1.png", "Conveyor_Belt.png"],
+  ConveyorMonitor: ["Conveyor_Throughput_Monitor.png"],
+  ThroughputMonitor: ["Conveyor_Throughput_Monitor.png"],
   Converter: ["Converter.png"],
   DroneStation: ["Drone_Port.png"],
   FrackingExtractor: ["Resource_Well_Extractor.png"],

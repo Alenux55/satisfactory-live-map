@@ -19,6 +19,8 @@ export function fingerprint(entity: MapEntity): string {
     entity.powerShards ?? "",
     entity.somersloops ?? "",
     entity.production ?? "",
+    entity.throughput ?? "",
+    entity.throughputConfidence ?? "",
     path,
   ].join("|");
 }

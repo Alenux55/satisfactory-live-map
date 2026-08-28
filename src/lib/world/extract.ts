@@ -6,7 +6,7 @@ import {
   type SaveComponent,
   type SaveEntity,
 } from "@etothepii/satisfactory-file-parser";
-import { categorize, displayName, footprintFor, shortType } from "./categorize";
+import { categorize, displayName, footprintFor, isConveyorMonitor, shortType } from "./categorize";
 import { cmToMeters, yawFromQuaternion } from "./coords";
 import { parsePurity, resourceKind, RESOURCE_TYPE_LABELS } from "./resource";
 import { applyVanillaNodeCatalog } from "./vanilla-nodes";
@@ -21,6 +21,7 @@ type SaveObjectLike = SaveEntity | SaveComponent;
 
 const NODE_CLAIM_RADIUS_M = 28;
 let unknownNodeSamples = 0;
+let monitorSamples = 0;
 
 const INCLUDE =
   /Buildable|Char_Player|Vehicle|Explorer|Tractor|Truck|CyberWagon|FactoryCart|ConveyorChain|LightweightBuildable|PipeHyper|JumpPad|Locomotive|FreightWagon|GolfCart|BP_Crate|DeathCrate/i;
@@ -207,6 +208,125 @@ function stacksOf(inv: SaveComponent): unknown {
   return inv.properties?.mInventoryStacks ?? propValue(inv, "mInventoryStacks");
 }
 
+function structNum(raw: unknown, ...names: string[]): number | undefined {
+  const rec = asRecord(raw) ?? asRecord(asRecord(raw)?.value) ?? asRecord(asRecord(raw)?.properties);
+  if (!rec) return unwrapNum(raw);
+  for (const name of names) {
+    const n = unwrapNum(rec[name]) ?? unwrapNum(asRecord(rec[name])?.value);
+    if (typeof n === "number") return n;
+  }
+  const props = asRecord(rec.properties);
+  if (props) {
+    for (const name of names) {
+      const n = unwrapNum(props[name]) ?? unwrapNum(asRecord(props[name])?.value);
+      if (typeof n === "number") return n;
+    }
+  }
+  return undefined;
+}
+
+function finiteRate(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+  return Math.round(value);
+}
+
+function rateFromMonitorData(raw: unknown): number | undefined {
+  const values = arrayValues(raw);
+  if (!values.length) return undefined;
+  let items = 0;
+  let time = 0;
+  let avgSum = 0;
+  let avgN = 0;
+  for (const item of values) {
+    const n = structNum(item, "NumItems", "numItems", "mNumItems");
+    const t = structNum(item, "UpdateTime", "updateTime", "mUpdateTime");
+    const avg = structNum(item, "FloatLocalAverage", "floatLocalAverage", "Average");
+    if (typeof n === "number") items += n;
+    if (typeof t === "number") time += t;
+    if (typeof avg === "number" && avg >= 0) {
+      avgSum += avg;
+      avgN += 1;
+    }
+  }
+  if (avgN > 0) return finiteRate(avgSum / avgN);
+  if (time > 0) return finiteRate((items / time) * 60);
+  return undefined;
+}
+
+function throughputFromObject(entity: SaveObjectLike): number | undefined {
+  const direct = finiteRate(
+    floatProp(entity, "mCalculatedItemsPerMinute") ??
+      floatProp(entity, "mCalculatedAverage") ??
+      floatProp(entity, "CalculatedItemsPerMinute"),
+  );
+  if (direct != null) return direct;
+  const core =
+    propValue(entity, "mReplicatedCoreData") ??
+    propValue(entity, "ReplicatedCoreData") ??
+    entity.properties?.mReplicatedCoreData;
+  const fromCore = finiteRate(structNum(core, "Average", "average", "mAverage"));
+  if (fromCore != null) return fromCore;
+  const fromData = rateFromMonitorData(
+    propValue(entity, "mMonitorData") ?? propValue(entity, "MonitorData") ?? entity.properties?.mMonitorData,
+  );
+  if (fromData != null) return fromData;
+  const items = floatProp(entity, "mTotalItems") ?? structNum(propValue(entity, "mTotalItems"), "value");
+  const time = floatProp(entity, "mTotalTime") ?? structNum(propValue(entity, "mTotalTime"), "value");
+  if (typeof items === "number" && typeof time === "number" && time > 0) {
+    return finiteRate((items / time) * 60);
+  }
+  const props = entity.properties;
+  if (!props) return undefined;
+  for (const [key, val] of Object.entries(props)) {
+    if (!/ItemsPerMinute|Throughput/i.test(key)) continue;
+    if (/Offset|Time|Confidence|Section/i.test(key)) continue;
+    const rate = finiteRate(unwrapNum(val) ?? unwrapNum(asRecord(val)?.value));
+    if (rate != null) return rate;
+  }
+  return undefined;
+}
+
+function confidenceFromObject(entity: SaveObjectLike): number | undefined {
+  const raw =
+    floatProp(entity, "mConfidence") ??
+    floatProp(entity, "Confidence") ??
+    structNum(propValue(entity, "mReplicatedCoreData"), "Confidence", "confidence");
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) return undefined;
+  const pct = raw <= 1 ? raw * 100 : raw;
+  return Math.round(Math.min(100, pct) * 10) / 10;
+}
+
+function monitorExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Partial<MapEntity> {
+  if (!isConveyorMonitor(obj.typePath)) return {};
+  const sources: SaveObjectLike[] = [obj];
+  for (const ref of obj.components ?? []) {
+    const path = typeof ref === "string" ? ref : pathNameOf(ref);
+    if (!path) continue;
+    const child = lookupByName(byName, path);
+    if (child) sources.push(child);
+  }
+  let throughput: number | undefined;
+  let throughputConfidence: number | undefined;
+  for (const source of sources) {
+    throughput ??= throughputFromObject(source);
+    throughputConfidence ??= confidenceFromObject(source);
+  }
+  if (monitorSamples < 3) {
+    monitorSamples += 1;
+    debugLog("conveyor monitor", {
+      instance: obj.instanceName,
+      type: shortType(obj.typePath),
+      props: Object.keys(obj.properties ?? {}),
+      throughput: throughput ?? null,
+      confidence: throughputConfidence ?? null,
+    });
+  }
+  const extras: Partial<MapEntity> = {};
+  if (throughput != null) extras.throughput = throughput;
+  if (throughputConfidence != null) extras.throughputConfidence = throughputConfidence;
+  return extras;
+}
+
 function factoryExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Partial<MapEntity> {
   const extras: Partial<MapEntity> = {};
   const potential = floatProp(obj, "mCurrentPotential") ?? floatProp(obj, "mPendingPotential");
@@ -255,6 +375,7 @@ function factoryExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Pa
       if (fromRecipe !== "unknown") extras.resource = fromRecipe;
     }
   }
+  Object.assign(extras, monitorExtras(obj, byName));
   return extras;
 }
 
@@ -540,6 +661,7 @@ export function extractEntities(save: SatisfactorySave): MapEntity[] {
   const seen = new Set<string>();
   const byName = new Map<string, SaveObjectLike>();
   unknownNodeSamples = 0;
+  monitorSamples = 0;
 
   for (const level of Object.values(save.levels ?? {})) {
     for (const obj of level.objects ?? []) {

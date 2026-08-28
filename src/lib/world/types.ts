@@ -62,6 +62,10 @@ export type MapEntity = {
   powerShards?: number;
   somersloops?: number;
   production?: number;
+  /** Conveyor Throughput Monitor items/min. Omitted when the save has no rate. */
+  throughput?: number;
+  /** 0–100. Game fills this as the 1-minute average window fills. */
+  throughputConfidence?: number;
 };
 
 export type SaveHeaderInfo = {

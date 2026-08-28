@@ -39,6 +39,7 @@ const SIZE_RULES: [RegExp, Size][] = [
   [/Foundation|Ramp/i, { w: 8, h: 8 }],
   [/Wall/i, { w: 8, h: 1.5 }],
   [/PowerPole|PowerLine|WallOutlet/i, { w: 1.5, h: 1.5 }],
+  [/ConveyorMonitor|ThroughputMonitor/i, { w: 3, h: 3 }],
   [/Splitter|Merger|PipelineJunction/i, { w: 4, h: 4 }],
   [/HubTerminal|Hub|WorkBench|Mam/i, { w: 16, h: 16 }],
   [/SpaceElevator/i, { w: 30, h: 30 }],
@@ -127,6 +128,10 @@ export function footprintFor(typePath: string): Size {
   if (category === "foundations" || category === "walls" || category === "architecture") return { w: 8, h: 8 };
   if (category === "power") return { w: 2, h: 2 };
   return { w: 6, h: 6 };
+}
+
+export function isConveyorMonitor(type: string): boolean {
+  return /ConveyorMonitor|ThroughputMonitor/i.test(type) && !/ResourceSink/i.test(type);
 }
 
 export function prettyType(type: string): string {

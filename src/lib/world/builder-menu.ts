@@ -102,7 +102,7 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
         label: "1. Conveyor Belts",
         test: (p, s) =>
           /ConveyorBelt|ConveyorChain|^Conveyor$|ConveyorPassthrough/i.test(p + s) &&
-          !/Lift|Pole|Ceiling|Wall|FloorHole|WallHole/i.test(p + s),
+          !/Lift|Pole|Ceiling|Wall|FloorHole|WallHole|Monitor/i.test(p + s),
       },
       {
         id: "lifts",
@@ -127,12 +127,17 @@ export const BUILDER_MENU: BuilderCategoryDef[] = [
       {
         id: "splitters",
         label: "6. Sort / Merge",
-        test: anyOf(/Splitter|Merger|ThroughputMonitor/i),
+        test: anyOf(/Splitter|Merger/i),
       },
       {
         id: "storage",
         label: "7. Storage",
         test: anyOf(/Storage|Container|IndustrialFluid/i),
+      },
+      {
+        id: "monitors",
+        label: "8. Throughput monitors",
+        test: anyOf(/ConveyorMonitor|ThroughputMonitor/i),
       },
     ],
   },

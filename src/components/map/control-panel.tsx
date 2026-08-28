@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BoundedRangeSlider, Slider } from "@/components/ui/slider";
-import { displayName } from "@/lib/world/categorize";
+import { displayName, isConveyorMonitor } from "@/lib/world/categorize";
 import { formatBytes, formatDuration, formatInterval } from "@/lib/world/coords";
 import { RESOURCE_TYPE_LABELS } from "@/lib/world/resource";
 import { layerIcons, layerLabel } from "@/lib/world/builder-menu";
@@ -564,6 +564,23 @@ export function ControlPanel({
                 <>
                   <dt>Production rate</dt>
                   <dd className="text-foreground">{selected.production}%</dd>
+                </>
+              ) : null}
+              {selected.throughput != null ? (
+                <>
+                  <dt>Throughput</dt>
+                  <dd className="text-foreground">{Math.round(selected.throughput)} /min</dd>
+                </>
+              ) : isConveyorMonitor(selected.type) ? (
+                <>
+                  <dt>Throughput</dt>
+                  <dd className="text-muted-foreground">not stored in this save</dd>
+                </>
+              ) : null}
+              {selected.throughputConfidence != null ? (
+                <>
+                  <dt>Confidence</dt>
+                  <dd className="text-foreground">{selected.throughputConfidence}%</dd>
                 </>
               ) : null}
               {selected.resource ? (

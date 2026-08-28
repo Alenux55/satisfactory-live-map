@@ -40,6 +40,8 @@ function machine(
     powerShards: extra?.powerShards,
     somersloops: extra?.somersloops,
     production: extra?.production,
+    throughput: extra?.throughput,
+    throughputConfidence: extra?.throughputConfidence,
   };
 }
 
@@ -217,6 +219,18 @@ export function buildDemoWorld(tick: number): MapEntity[] {
     );
     entities.push(belt(OX + 90, OY + 16, OX + 93, OY + 16, 2));
     entities.push(belt(OX + 90, OY + 28, OX + 93, OY + 28, 2));
+    entities.push(
+      machine("ConveyorMonitor", "logistics", OX + 91.5, OY + 16, 0, 3, 3, {
+        id: "demo:monitor:0",
+        throughput: 120,
+        throughputConfidence: 100,
+      }),
+      machine("ConveyorMonitor", "logistics", OX + 91.5, OY + 28, 0, 3, 3, {
+        id: "demo:monitor:1",
+        throughput: 12,
+        throughputConfidence: 70,
+      }),
+    );
   }
 
   const poleCount = Math.min(12, 4 + t);
