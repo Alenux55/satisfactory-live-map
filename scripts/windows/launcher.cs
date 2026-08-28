@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 
 [assembly: AssemblyTitle("FICSIT Live Map")]
@@ -11,6 +12,9 @@ using System.Text.RegularExpressions;
 
 internal static class Program
 {
+    static readonly object LogLock = new object();
+    static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);
+
     static int Main(string[] args)
     {
         string repoRoot = null;
@@ -51,6 +55,10 @@ internal static class Program
         }
 
         string logFile = Path.Combine(repoRoot, "data", "server.log");
+        AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e)
+        {
+            AppendLog(logFile, "[launcher] unhandled " + e.ExceptionObject);
+        };
         try
         {
             Directory.SetCurrentDirectory(repoRoot);
@@ -107,11 +115,11 @@ internal static class Program
                 child.StartInfo = psi;
                 child.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e)
                 {
-                    if (e.Data != null) AppendLog(logFile, e.Data);
+                    CaptureChildLine(logFile, e.Data);
                 };
                 child.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
                 {
-                    if (e.Data != null) AppendLog(logFile, e.Data);
+                    CaptureChildLine(logFile, e.Data);
                 };
                 child.Start();
                 child.BeginOutputReadLine();
@@ -153,12 +161,49 @@ internal static class Program
         return null;
     }
 
+    static void CaptureChildLine(string logFile, string line)
+    {
+        if (string.IsNullOrEmpty(line)) return;
+        try
+        {
+            if (IsAppLogLine(line)) return;
+            AppendLog(logFile, line);
+        }
+        catch
+        {
+        }
+    }
+
+    static bool IsAppLogLine(string line)
+    {
+        return line.IndexOf(" [INFO] ") >= 0
+            || line.IndexOf(" [WARN] ") >= 0
+            || line.IndexOf(" [ERROR] ") >= 0
+            || line.IndexOf(" [DEBUG] ") >= 0;
+    }
+
     static void AppendLog(string logFile, string line)
     {
         if (string.IsNullOrEmpty(logFile) || string.IsNullOrEmpty(line)) return;
-        string dir = Path.GetDirectoryName(logFile);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.AppendAllText(logFile, DateTime.Now.ToString("o") + " " + line + Environment.NewLine);
+        try
+        {
+            string dir = Path.GetDirectoryName(logFile);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            lock (LogLock)
+            {
+                using (FileStream fs = new FileStream(logFile, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                using (StreamWriter sw = new StreamWriter(fs, Utf8))
+                {
+                    sw.Write(DateTime.Now.ToString("o"));
+                    sw.Write(' ');
+                    sw.Write(line);
+                    sw.WriteLine();
+                }
+            }
+        }
+        catch
+        {
+        }
     }
 
     static string Quote(string path)

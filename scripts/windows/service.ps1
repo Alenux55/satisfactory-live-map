@@ -201,7 +201,7 @@ function Invoke-Install {
     Out-Null
   Write-Host "Installed scheduled task '$TaskName' as $env:USERNAME (Task Scheduler, not services.msc)."
   Write-Host "Host:    $(Get-LauncherExe)"
-  Write-Host "Task Manager → Processes should show FicsitLiveMap, not Windows PowerShell."
+  Write-Host "Task Manager -> Processes should show FicsitLiveMap, not Windows PowerShell."
   Invoke-Start
 }
 
@@ -227,7 +227,7 @@ function Invoke-Start {
   Write-HostConfig
   $hostProc = @(Get-Process -Name "FicsitLiveMap" -ErrorAction SilentlyContinue)
   if ((Test-MapListening) -and $hostProc.Count -gt 0) {
-    Write-Host "Already running (FicsitLiveMap pid=$($hostProc[0].Id) on port $Port). Task Manager → Background processes."
+    Write-Host "Already running (FicsitLiveMap pid=$($hostProc[0].Id) on port $Port). Task Manager -> Background processes."
     return
   }
   if (Test-MapListening) {
@@ -255,7 +255,11 @@ function Invoke-Start {
   }
   if (Wait-Port -Open -Seconds 45) {
     Write-Host "Listening on 0.0.0.0:$Port"
-    Write-Host "Look under Task Manager → Background processes for FICSIT Live Map (it has no window, so it will not stay in Apps)."
+    Write-Host "Look under Task Manager -> Background processes for FICSIT Live Map (it has no window, so it will not stay in Apps)."
+    $still = @(Get-Process -Name "FicsitLiveMap" -ErrorAction SilentlyContinue)
+    if ($still.Count -eq 0) {
+      Write-Warning "Port $Port is listening but FicsitLiveMap.exe already exited. Node was left running without the named host. Check data\server.log for [launcher] lines, then pull latest and Restart."
+    }
   } else {
     Write-Warning "Port $Port is not listening yet. Check data\server.log for [launcher] lines."
   }
@@ -296,12 +300,25 @@ function Invoke-Rebuild {
   Invoke-Start
 }
 
+function Format-TaskResult {
+  param($Result)
+  $raw = [int64]$Result
+  if ($raw -lt 0) { $raw = $raw + 4294967296 }
+  $hex = ("0x{0:X8}" -f $raw)
+  switch ($raw) {
+    0 { return "0 success" }
+    267009 { return "$hex still running" }
+    3762504530 { return "$hex host crashed (unhandled .NET exception)" }
+    default { return "$hex ($raw)" }
+  }
+}
+
 function Invoke-Status {
   $task = Get-Task
   if ($task) {
     $info = $task | Get-ScheduledTaskInfo
     $execute = Get-TaskActionExecute
-    Write-Host "Task:    $TaskName  state=$($task.State)  last=$($info.LastTaskResult)  lastRun=$($info.LastRunTime)"
+    Write-Host "Task:    $TaskName  state=$($task.State)  last=$(Format-TaskResult $info.LastTaskResult)  lastRun=$($info.LastRunTime)"
     Write-Host "Action:  $execute"
     if (Test-TaskUsesPowerShell) {
       Write-Warning "That action is PowerShell, so Task Manager shows Windows PowerShell. Re-run Install as the Windows account that owns the task."
@@ -310,17 +327,20 @@ function Invoke-Status {
     Write-Host "Task:    (not installed)  run Install to start at boot"
   }
   $hostProc = @(Get-Process -Name "FicsitLiveMap" -ErrorAction SilentlyContinue)
+  $listen = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
   if ($hostProc.Count -gt 0) {
     Write-Host "Host:    FicsitLiveMap  pid=$($hostProc[0].Id)"
   } else {
     Write-Host "Host:    (no FicsitLiveMap.exe process)"
+    if ($listen.Count -gt 0) {
+      Write-Warning "Node is still serving port $Port without FicsitLiveMap.exe. The named host crashed; the map may keep answering until you Restart."
+    }
   }
   if (Test-Path $PidFile) {
     Write-Host "PidFile: $(Get-Content -Raw $PidFile)"
   } else {
     Write-Host "PidFile: (none)"
   }
-  $listen = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
   if ($listen.Count -gt 0) {
     Write-Host "Listen:  0.0.0.0:$Port  pid=$($listen[0].OwningProcess)"
   } else {
