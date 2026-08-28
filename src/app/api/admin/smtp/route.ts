@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parseFromHeader } from "@/lib/auth/from-header";
 import { isValidEmail } from "@/lib/auth/password";
 import { requireAdmin } from "@/lib/auth/guard";
 import { sendSmtpTestEmail } from "@/lib/auth/mail";
@@ -23,8 +24,12 @@ export async function PUT(request: Request) {
     if (admin instanceof Response) return admin;
     const body = (await request.json()) as Record<string, unknown>;
     const from = typeof body.from === "string" ? body.from : "";
-    if (from && !isValidEmail(from.replace(/.*<([^>]+)>/, "$1").trim())) {
-      return NextResponse.json({ error: "From must be an email address" }, { status: 400 });
+    const fromAddress = parseFromHeader(from).address;
+    if (from && !isValidEmail(fromAddress)) {
+      return NextResponse.json(
+        { error: "From needs a mailbox address (the name is optional)" },
+        { status: 400 },
+      );
     }
     const saved = await saveSmtpConfig({
       host: typeof body.host === "string" ? body.host : undefined,

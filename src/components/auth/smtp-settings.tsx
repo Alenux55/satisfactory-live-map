@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { formatFromHeader, parseFromHeader } from "@/lib/auth/from-header";
 
 type SmtpView = {
   host: string;
@@ -24,6 +25,7 @@ export function SmtpSettings({ defaultTo }: { defaultTo: string }) {
     secure: false,
     user: "",
     pass: "",
+    fromName: "",
     from: "",
     publicUrl: "",
     to: defaultTo,
@@ -48,7 +50,8 @@ export function SmtpSettings({ defaultTo }: { defaultTo: string }) {
       secure: body.secure,
       user: body.user,
       pass: "",
-      from: body.from,
+      fromName: parseFromHeader(body.from).name,
+      from: parseFromHeader(body.from).address,
       publicUrl: body.publicUrl,
       to: current.to || defaultTo,
     }));
@@ -66,7 +69,7 @@ export function SmtpSettings({ defaultTo }: { defaultTo: string }) {
     secure: form.secure,
     user: form.user,
     pass: form.pass,
-    from: form.from,
+    from: formatFromHeader(form.fromName, form.from),
     publicUrl: form.publicUrl,
   });
 
@@ -185,17 +188,30 @@ export function SmtpSettings({ defaultTo }: { defaultTo: string }) {
             autoComplete="new-password"
           />
         </div>
-        <div className="flex flex-col gap-1.5 sm:col-span-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="smtp-from-name">From name</Label>
+          <Input
+            id="smtp-from-name"
+            value={form.fromName}
+            onChange={(event) => setForm({ ...form, fromName: event.target.value })}
+            placeholder="FICSIT Notifications"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="smtp-from">From address</Label>
           <Input
             id="smtp-from"
             type="email"
             value={form.from}
             onChange={(event) => setForm({ ...form, from: event.target.value })}
-            placeholder="ficsit-map@example.com"
+            placeholder="ficsit@example.com"
             required
           />
         </div>
+        <p className="text-[11px] text-muted-foreground sm:col-span-2">
+          Name is what people see in their inbox. Address still has to be a mailbox your SMTP server
+          will send as.
+        </p>
         <div className="flex flex-col gap-1.5 sm:col-span-2">
           <Label htmlFor="smtp-public">Public map URL</Label>
           <Input
