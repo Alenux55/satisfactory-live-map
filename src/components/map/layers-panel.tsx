@@ -48,6 +48,8 @@ export function LayersPanel({
   onHover,
   boostPin,
   onBoostPin,
+  showBoosts,
+  onShowBoosts,
 }: {
   entities: Map<string, MapEntity>;
   layers: LayerFlags;
@@ -59,6 +61,8 @@ export function LayersPanel({
   onHover: (key: string | null) => void;
   boostPin: BoostPin;
   onBoostPin: (pin: BoostPin) => void;
+  showBoosts: boolean;
+  onShowBoosts: (on: boolean) => void;
 }) {
   const hidden = useMemo(() => new Set(hiddenTypes), [hiddenTypes]);
   const hiddenSubSet = useMemo(() => new Set(hiddenSubs), [hiddenSubs]);
@@ -148,12 +152,14 @@ export function LayersPanel({
     onLayers({ ...DEFAULT_LAYERS, ...Object.fromEntries(BUILDER_MENU.map((cat) => [cat.id, true])) } as LayerFlags);
     onHiddenTypes([]);
     onHiddenSubs([]);
+    onShowBoosts(true);
   };
 
   const allOff = () => {
     onLayers(Object.fromEntries(BUILDER_MENU.map((cat) => [cat.id, false])) as LayerFlags);
     onHiddenTypes([]);
     onHiddenSubs([]);
+    onShowBoosts(false);
   };
 
   const groupOn = (rows: TypeRow[], category: EntityCategory) => {
@@ -195,6 +201,8 @@ export function LayersPanel({
           pin={boostPin}
           onPin={onBoostPin}
           onHover={onHover}
+          enabled={showBoosts}
+          onEnabled={onShowBoosts}
         />
         {BUILDER_MENU.map((cat) => {
           const rows = grouped.get(cat.id) ?? [];
@@ -362,21 +370,48 @@ function BoostsSection({
   pin,
   onPin,
   onHover,
+  enabled,
+  onEnabled,
 }: {
   stats: { sloopBuildings: number; sloopItems: number; shardBuildings: number; shardItems: number };
   pin: BoostPin;
   onPin: (pin: BoostPin) => void;
   onHover: (key: string | null) => void;
+  enabled: boolean;
+  onEnabled: (on: boolean) => void;
 }) {
+  const hover = (key: string | null) => {
+    if (!enabled) return;
+    onHover(key);
+  };
+  const pinRow = (next: BoostPin) => {
+    if (!enabled) onEnabled(true);
+    onPin(next);
+  };
   return (
-    <div className="min-w-0 overflow-x-hidden rounded-lg border border-border/70 bg-card/40">
-      <div className="flex min-w-0 flex-col gap-1 rounded-md px-2 py-1.5">
-        <p className="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium">
-          <Sparkles className="size-3.5 shrink-0" />
-          Boosts
-        </p>
+    <div
+      className="min-w-0 overflow-x-hidden rounded-lg border border-border/70 bg-card/40"
+      onMouseEnter={() => hover(BOOST_HIGHLIGHT.boosted)}
+      onMouseLeave={() => onHover(null)}
+    >
+      <div className="flex min-w-0 flex-col gap-1 rounded-md px-2 py-1.5 hover:bg-muted/40">
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium">
+            <Sparkles className="size-3.5 shrink-0" />
+            Boosts
+          </p>
+          <Switch
+            size="sm"
+            className="shrink-0"
+            checked={enabled}
+            onCheckedChange={(on) => {
+              onEnabled(on);
+              if (!on) onHover(null);
+            }}
+          />
+        </div>
         <p className="text-[11px] text-muted-foreground">
-          Hover to highlight. Click to pin. Buildings stay in Production and Power.
+          Switch hides the dots. Hover to highlight, click to pin. Buildings stay in Production and Power.
         </p>
       </div>
       <div className="flex min-w-0 flex-col gap-1 border-t border-border/60 px-2 py-2">
@@ -388,8 +423,9 @@ function BoostsSection({
           itemLabel="somersloops"
           active={pin.somersloops}
           highlightKey={BOOST_HIGHLIGHT.somersloops}
-          onHover={onHover}
-          onToggle={() => onPin({ ...pin, somersloops: !pin.somersloops })}
+          hoverLeaveKey={BOOST_HIGHLIGHT.boosted}
+          onHover={hover}
+          onToggle={() => pinRow({ ...pin, somersloops: !pin.somersloops })}
         />
         <BoostRow
           label="Power shards"
@@ -399,8 +435,9 @@ function BoostsSection({
           itemLabel="power shards"
           active={pin.shards}
           highlightKey={BOOST_HIGHLIGHT.shards}
-          onHover={onHover}
-          onToggle={() => onPin({ ...pin, shards: !pin.shards })}
+          hoverLeaveKey={BOOST_HIGHLIGHT.boosted}
+          onHover={hover}
+          onToggle={() => pinRow({ ...pin, shards: !pin.shards })}
         />
       </div>
     </div>
@@ -415,6 +452,7 @@ function BoostRow({
   itemLabel,
   active,
   highlightKey,
+  hoverLeaveKey,
   onHover,
   onToggle,
 }: {
@@ -425,6 +463,7 @@ function BoostRow({
   itemLabel: string;
   active: boolean;
   highlightKey: string;
+  hoverLeaveKey: string;
   onHover: (key: string | null) => void;
   onToggle: () => void;
 }) {
@@ -437,7 +476,7 @@ function BoostRow({
       )}
       title={`${buildings} buildings, ${items} ${itemLabel}. Hover to highlight, click to pin.`}
       onMouseEnter={() => onHover(highlightKey)}
-      onMouseLeave={() => onHover(null)}
+      onMouseLeave={() => onHover(hoverLeaveKey)}
       onClick={onToggle}
     >
       <WikiIcon candidates={icons} label={label} className="size-5 shrink-0" />

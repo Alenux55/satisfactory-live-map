@@ -9,6 +9,7 @@ export type UserPrefs = {
   hiddenSubs: string[];
   leftWidth: number;
   rightWidth: number;
+  showBoosts: boolean;
 };
 
 export type UserRecord = {
@@ -64,6 +65,7 @@ export function defaultPrefs(): UserPrefs {
     hiddenSubs: [],
     leftWidth: DEFAULT_LEFT_WIDTH,
     rightWidth: DEFAULT_RIGHT_WIDTH,
+    showBoosts: true,
   };
 }
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Menu, Layers } from "lucide-react";
 import type { ImageOverlay, Map as LeafletMap } from "leaflet";
 import { applyDelta } from "@/lib/world/diff";
-import { boostHighlightKey } from "@/lib/world/builder-menu";
+import { boostHighlightKey, isBoostHighlight } from "@/lib/world/builder-menu";
 import {
   GRID_METERS,
   latLngToWorld,
@@ -52,6 +52,7 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
   const [hiddenSubs, setHiddenSubs] = useState<string[]>(initialUser.prefs.hiddenSubs ?? []);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [boostPin, setBoostPin] = useState({ somersloops: false, shards: false });
+  const [showBoosts, setShowBoosts] = useState(initialUser.prefs.showBoosts !== false);
   const [account, setAccount] = useState<PublicUser | null>(initialUser);
   const [prefsReady] = useState(true);
   const [selected, setSelected] = useState<MapEntity | null>(null);
@@ -178,8 +179,13 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
   }, [hiddenSubs]);
 
   useEffect(() => {
-    canvasRef.current?.setHighlight(highlight ?? boostHighlightKey(boostPin));
-  }, [highlight, boostPin]);
+    const hover = highlight && (!isBoostHighlight(highlight) || showBoosts) ? highlight : null;
+    canvasRef.current?.setHighlight(hover ?? (showBoosts ? boostHighlightKey(boostPin) : null));
+  }, [highlight, boostPin, showBoosts]);
+
+  useEffect(() => {
+    canvasRef.current?.setShowBoosts(showBoosts);
+  }, [showBoosts]);
 
   useEffect(() => {
     canvasRef.current?.setZRange({ min: zLower, max: zUpper });
@@ -249,6 +255,7 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
       canvas.setLayers(layersRef.current);
       canvas.setHiddenTypes(hiddenTypes);
       canvas.setHiddenSubs(hiddenSubs);
+      canvas.setShowBoosts(showBoosts);
       canvas.setEntities(entitiesRef.current);
       canvasRef.current = canvas;
 
@@ -313,12 +320,12 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "prefs",
-          prefs: { serverId, layers, hiddenTypes, hiddenSubs, leftWidth, rightWidth },
+          prefs: { serverId, layers, hiddenTypes, hiddenSubs, leftWidth, rightWidth, showBoosts },
         }),
       });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [account, hiddenSubs, hiddenTypes, layers, leftWidth, prefsReady, rightWidth, serverId]);
+  }, [account, hiddenSubs, hiddenTypes, layers, leftWidth, prefsReady, rightWidth, serverId, showBoosts]);
 
   useEffect(() => {
     if (!prefsReady) return;
@@ -501,6 +508,8 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
                     onHover={setHighlight}
                     boostPin={boostPin}
                     onBoostPin={setBoostPin}
+                    showBoosts={showBoosts}
+                    onShowBoosts={setShowBoosts}
                   />
                 </SheetContent>
               </Sheet>
@@ -545,6 +554,8 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
           onHover={setHighlight}
           boostPin={boostPin}
           onBoostPin={setBoostPin}
+          showBoosts={showBoosts}
+          onShowBoosts={setShowBoosts}
         />
       </aside>
     </div>

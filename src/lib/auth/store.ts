@@ -66,6 +66,7 @@ function coercePrefs(raw: unknown): UserPrefs {
       : [],
     leftWidth: clampSidebarWidth(Number(rec.leftWidth), DEFAULT_LEFT_WIDTH),
     rightWidth: clampSidebarWidth(Number(rec.rightWidth), DEFAULT_RIGHT_WIDTH),
+    showBoosts: rec.showBoosts !== false,
   };
 }
 

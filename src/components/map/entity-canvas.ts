@@ -15,6 +15,7 @@ export type EntityCanvasHandle = {
   setHiddenTypes: (hidden: Iterable<string>) => void;
   setHiddenSubs: (hidden: Iterable<string>) => void;
   setHighlight: (key: string | null) => void;
+  setShowBoosts: (on: boolean) => void;
   setZRange: (range: { min: number; max: number } | null) => void;
   setSelected: (id: string | null) => void;
   remove: () => void;
@@ -87,6 +88,7 @@ export function attachEntityCanvas(
   let hidden = new Set<string>();
   let hiddenSubs = new Set<string>();
   let highlight: string | null = null;
+  let showBoosts = true;
   let drawnZoom = map.getZoom();
   let drawnCenter = map.getCenter();
   let zooming = false;
@@ -224,7 +226,7 @@ export function attachEntityCanvas(
 
       const slooped = (entity.somersloops ?? 0) > 0;
       const sharded = (entity.powerShards ?? 0) > 0;
-      if (slooped || sharded) {
+      if (showBoosts && (slooped || sharded)) {
         const badge = Math.max(3.5, Math.min(5.5, metersToPx(1.4)));
         const spread = Math.max(w, h) * 0.22;
         let bx = p.x + spread;
@@ -413,6 +415,10 @@ export function attachEntityCanvas(
     },
     setHighlight(key) {
       highlight = key;
+      draw();
+    },
+    setShowBoosts(on) {
+      showBoosts = on;
       draw();
     },
     setZRange(next) {

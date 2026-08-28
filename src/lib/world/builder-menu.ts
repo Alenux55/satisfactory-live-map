@@ -337,6 +337,14 @@ export function boostHighlightKey(pin: BoostPin): string | null {
   return null;
 }
 
+export function isBoostHighlight(highlight: string | null): boolean {
+  return (
+    highlight === BOOST_HIGHLIGHT.somersloops ||
+    highlight === BOOST_HIGHLIGHT.shards ||
+    highlight === BOOST_HIGHLIGHT.boosted
+  );
+}
+
 export function matchesLayerHighlight(entity: MapEntity, highlight: string): boolean {
   if (highlight === BOOST_HIGHLIGHT.somersloops) return entityHasSomersloops(entity);
   if (highlight === BOOST_HIGHLIGHT.shards) return entityHasShards(entity);
