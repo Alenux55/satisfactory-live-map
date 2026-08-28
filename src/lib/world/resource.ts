@@ -7,6 +7,11 @@ export const PURITY_COLORS: Record<NodePurity, string> = {
   pure: "#22c55e",
 };
 
+/** Claimed ring. Cyan so it is not confused with purity fill or the cream selection halo. */
+export const CLAIMED_RING_COLOR = "#22d3ee";
+/** Click / layer-highlight halo. Larger and cream, kept separate from claimed. */
+export const SELECT_RING_COLOR = "#fff7ed";
+
 export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   iron: "Iron",
   copper: "Copper",

@@ -2,8 +2,8 @@ import type { LatLng, Map as LeafletMap, LeafletMouseEvent, Point, ZoomAnimEvent
 import type { EntityCategory, MapEntity } from "@/lib/world/types";
 import { CATEGORY_COLORS } from "@/lib/world/categorize";
 import { worldToLatLng } from "@/lib/world/coords";
-import { PURITY_COLORS } from "@/lib/world/resource";
-import { layerIcons, layerKey, matchesLayerHighlight, subcategoryId } from "@/lib/world/builder-menu";
+import { PURITY_COLORS, CLAIMED_RING_COLOR, SELECT_RING_COLOR } from "@/lib/world/resource";
+import { BOOST_HIGHLIGHT, layerIcons, layerKey, matchesLayerHighlight, subcategoryId } from "@/lib/world/builder-menu";
 import { iconSrc } from "@/lib/world/icons";
 import { pioneerColor } from "@/lib/world/pioneer-color";
 
@@ -19,6 +19,28 @@ export type EntityCanvasHandle = {
   setSelected: (id: string | null) => void;
   remove: () => void;
 };
+
+const DIM = 0.18;
+
+function strokeRing(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  color: string,
+  width: number,
+) {
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = "#0b1220";
+  ctx.lineWidth = width + 2.4;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.stroke();
+}
 
 const iconCache = new Map<string, HTMLImageElement | "fail">();
 
@@ -110,7 +132,7 @@ export function attachEntityCanvas(
 
     for (const entity of [...rest, ...resources, ...players]) {
       const isHi = highlight != null && matchesLayerHighlight(entity, highlight);
-      if (highlight && !isHi) ctx.globalAlpha = 0.18;
+      if (highlight && !isHi) ctx.globalAlpha = DIM;
       else ctx.globalAlpha = 1;
 
       if (entity.path && entity.path.length >= 2) {
@@ -147,19 +169,16 @@ export function attachEntityCanvas(
           ctx.drawImage(icon, p.x - inner, p.y - inner, inner * 2, inner * 2);
           ctx.restore();
         }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = "#0b1220";
+        ctx.lineWidth = 2;
+        ctx.stroke();
         if (entity.claimed) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, radius + 1.5, 0, Math.PI * 2);
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 2.4;
-          ctx.stroke();
+          strokeRing(ctx, p.x, p.y, radius + 3, CLAIMED_RING_COLOR, 3.2);
         }
         if (entity.id === selectedId || isHi) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, radius + 4, 0, Math.PI * 2);
-          ctx.strokeStyle = "#fff7ed";
-          ctx.lineWidth = 2;
-          ctx.stroke();
+          strokeRing(ctx, p.x, p.y, radius + 8, SELECT_RING_COLOR, 3.2);
         }
         if (showLabels) {
           ctx.fillStyle = "#fff7ed";
@@ -206,12 +225,17 @@ export function attachEntityCanvas(
       const slooped = (entity.somersloops ?? 0) > 0;
       const sharded = (entity.powerShards ?? 0) > 0;
       if (slooped || sharded) {
-        ctx.globalAlpha = 1;
         const badge = Math.max(3.5, Math.min(5.5, metersToPx(1.4)));
         const spread = Math.max(w, h) * 0.22;
         let bx = p.x + spread;
         const by = p.y - spread;
+        const follow = highlight && !isHi ? DIM : 1;
+        const sloopAlpha =
+          highlight === BOOST_HIGHLIGHT.shards ? DIM : highlight === BOOST_HIGHLIGHT.somersloops ? 1 : follow;
+        const shardAlpha =
+          highlight === BOOST_HIGHLIGHT.somersloops ? DIM : highlight === BOOST_HIGHLIGHT.shards ? 1 : follow;
         if (slooped) {
+          ctx.globalAlpha = sloopAlpha;
           ctx.beginPath();
           ctx.arc(bx, by, badge, 0, Math.PI * 2);
           ctx.fillStyle = "#e879f9";
@@ -222,6 +246,7 @@ export function attachEntityCanvas(
           bx += badge * 2 + 2;
         }
         if (sharded) {
+          ctx.globalAlpha = shardAlpha;
           ctx.beginPath();
           ctx.arc(bx, by, badge, 0, Math.PI * 2);
           ctx.fillStyle = "#facc15";

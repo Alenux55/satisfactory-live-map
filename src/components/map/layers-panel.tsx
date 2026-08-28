@@ -18,7 +18,7 @@ import {
   type BoostPin,
 } from "@/lib/world/builder-menu";
 import { CATEGORY_COLORS } from "@/lib/world/categorize";
-import { RESOURCE_TYPE_LABELS } from "@/lib/world/resource";
+import { RESOURCE_TYPE_LABELS, CLAIMED_RING_COLOR } from "@/lib/world/resource";
 import { DEFAULT_LAYERS, type EntityCategory, type MapEntity } from "@/lib/world/types";
 import { iconCandidatesForBuilding, iconCandidatesForResource } from "@/lib/world/icons";
 import { pioneerColor } from "@/lib/world/pioneer-color";
@@ -574,13 +574,14 @@ function ResourceToggle({
         <button
           type="button"
           className={cn(
-            "rounded px-1 py-0.5 font-mono text-[10px]",
+            "inline-flex items-center gap-1 rounded px-1 py-0.5 font-mono text-[10px]",
             mode === "claimed" ? "bg-primary/20 text-foreground" : "text-muted-foreground hover:bg-muted",
           )}
           onMouseEnter={() => onHover(claimedKey)}
           onMouseLeave={() => onHover(row.key)}
           onClick={() => setMode(mode === "claimed" ? "all" : "claimed")}
         >
+          <span className="size-1.5 shrink-0 rounded-full" style={{ background: CLAIMED_RING_COLOR }} />
           claimed {row.claimed ?? 0}
         </button>
         <button
