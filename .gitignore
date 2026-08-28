@@ -57,6 +57,7 @@ next-env.d.ts
 /data/server.log
 /data/server.pid
 /data/FicsitLiveMap.exe
+/data/host.json
 /data/world-map.jpg
 /data/world-map.jpg.part
 /data/icons/*

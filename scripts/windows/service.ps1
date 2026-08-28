@@ -32,6 +32,7 @@ $RunPs1 = Join-Path $PSScriptRoot "run.ps1"
 $LauncherSrc = Join-Path $PSScriptRoot "launcher.cs"
 $LauncherExe = Join-Path $RepoRoot "data\FicsitLiveMap.exe"
 $LauncherIcon = Join-Path $RepoRoot "src\app\favicon.ico"
+$HostConfig = Join-Path $RepoRoot "data\host.json"
 $PowerShell = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
 
 function Get-Task {
@@ -80,11 +81,21 @@ function Get-HiddenPowerShellArgs {
   return "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$RunPs1`" -Port $Port"
 }
 
+function Write-HostConfig {
+  $node = (Get-Command node -ErrorAction Stop).Source
+  New-Item -ItemType Directory -Force -Path (Join-Path $RepoRoot "data") | Out-Null
+  $body = @{ repo = $RepoRoot; port = "$Port"; node = $node } | ConvertTo-Json -Compress
+  [System.IO.File]::WriteAllText($HostConfig, $body)
+}
+
+function Test-MapListening {
+  return [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+}
+
 function Get-MapAction {
   $exe = Get-LauncherExe
-  $node = (Get-Command node -ErrorAction Stop).Source
-  $arg = "-Repo `"$RepoRoot`" -Port $Port -Node `"$node`""
-  return New-ScheduledTaskAction -Execute $exe -Argument $arg -WorkingDirectory $RepoRoot
+  Write-HostConfig
+  return New-ScheduledTaskAction -Execute $exe -WorkingDirectory $RepoRoot
 }
 
 function Get-TaskActionExecute {
@@ -164,6 +175,7 @@ function Invoke-Install {
   if (-not (Test-Path (Join-Path $RepoRoot "node_modules\next\dist\bin\next"))) {
     throw "Build the app first: powershell -ExecutionPolicy Bypass -File .\scripts\windows\setup.ps1"
   }
+  Invoke-Stop
   $node = (Get-Command node -ErrorAction Stop).Source
   $actionObj = Get-MapAction
   $startup = New-ScheduledTaskTrigger -AtStartup
@@ -202,9 +214,8 @@ function Invoke-Uninstall {
 function Start-MapProcess {
   try {
     $exe = Get-LauncherExe
-    $node = (Get-Command node -ErrorAction Stop).Source
-    Start-Process -FilePath $exe -WorkingDirectory $RepoRoot -WindowStyle Hidden `
-      -ArgumentList @("-Repo", $RepoRoot, "-Port", "$Port", "-Node", $node)
+    Write-HostConfig
+    Start-Process -FilePath $exe -WorkingDirectory $RepoRoot -WindowStyle Hidden
   } catch {
     Write-Warning "$_ Falling back to a hidden PowerShell host."
     Start-Process -FilePath $PowerShell -WorkingDirectory $RepoRoot -WindowStyle Hidden `
@@ -213,6 +224,16 @@ function Start-MapProcess {
 }
 
 function Invoke-Start {
+  Write-HostConfig
+  $hostProc = @(Get-Process -Name "FicsitLiveMap" -ErrorAction SilentlyContinue)
+  if ((Test-MapListening) -and $hostProc.Count -gt 0) {
+    Write-Host "Already running (FicsitLiveMap pid=$($hostProc[0].Id) on port $Port). Task Manager → Background processes."
+    return
+  }
+  if (Test-MapListening) {
+    Write-Warning "Port $Port is already in use without FicsitLiveMap.exe. Stopping the leftover process, then starting the host."
+    Stop-MapProcess
+  }
   Update-TaskAction
   $task = Get-Task
   $startedTask = $false
@@ -234,8 +255,9 @@ function Invoke-Start {
   }
   if (Wait-Port -Open -Seconds 45) {
     Write-Host "Listening on 0.0.0.0:$Port"
+    Write-Host "Look under Task Manager → Background processes for FICSIT Live Map (it has no window, so it will not stay in Apps)."
   } else {
-    Write-Warning "Port $Port is not listening yet. Check data\server.log"
+    Write-Warning "Port $Port is not listening yet. Check data\server.log for [launcher] lines."
   }
 }
 
