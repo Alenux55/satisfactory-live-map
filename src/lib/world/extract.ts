@@ -227,6 +227,7 @@ function factoryExtras(obj: SaveEntity, byName: Map<string, SaveObjectLike>): Pa
   } else if (sloops > 0) {
     extras.somersloops = sloops;
   }
+  if (shards > 0) extras.powerShards = shards;
   const isFactory =
     /Constructor|Assembler|Manufacturer|Smelter|Foundry|Refinery|Blender|Packager|Converter|Encoder|Accelerator|Hadron|Mixer|Miner|OilPump|WaterPump|ResourceWell|Fracking|Generator|Nuclear|Particle|Quantum/i.test(
       obj.typePath,

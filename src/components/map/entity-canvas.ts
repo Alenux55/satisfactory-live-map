@@ -3,7 +3,17 @@ import type { EntityCategory, MapEntity } from "@/lib/world/types";
 import { CATEGORY_COLORS } from "@/lib/world/categorize";
 import { worldToLatLng } from "@/lib/world/coords";
 import { PURITY_COLORS, CLAIMED_RING_COLOR, SELECT_RING_COLOR } from "@/lib/world/resource";
-import { BOOST_HIGHLIGHT, layerIcons, layerKey, matchesLayerHighlight, subcategoryId } from "@/lib/world/builder-menu";
+import {
+  boostDotFocus,
+  boostPinIsActive,
+  emptyBoostPin,
+  entityMatchesBoostPin,
+  layerIcons,
+  layerKey,
+  matchesLayerHighlight,
+  subcategoryId,
+  type BoostPin,
+} from "@/lib/world/builder-menu";
 import { iconSrc } from "@/lib/world/icons";
 import { pioneerColor } from "@/lib/world/pioneer-color";
 
@@ -15,6 +25,7 @@ export type EntityCanvasHandle = {
   setHiddenTypes: (hidden: Iterable<string>) => void;
   setHiddenSubs: (hidden: Iterable<string>) => void;
   setHighlight: (key: string | null) => void;
+  setBoostPin: (pin: BoostPin) => void;
   setShowBoosts: (on: boolean) => void;
   setZRange: (range: { min: number; max: number } | null) => void;
   setSelected: (id: string | null) => void;
@@ -88,6 +99,7 @@ export function attachEntityCanvas(
   let hidden = new Set<string>();
   let hiddenSubs = new Set<string>();
   let highlight: string | null = null;
+  let boostPin: BoostPin = emptyBoostPin();
   let showBoosts = true;
   let drawnZoom = map.getZoom();
   let drawnCenter = map.getCenter();
@@ -133,8 +145,11 @@ export function attachEntityCanvas(
     }
 
     for (const entity of [...rest, ...resources, ...players]) {
-      const isHi = highlight != null && matchesLayerHighlight(entity, highlight);
-      if (highlight && !isHi) ctx.globalAlpha = DIM;
+      const pinActive = showBoosts && boostPinIsActive(boostPin);
+      const isHi = highlight
+        ? matchesLayerHighlight(entity, highlight)
+        : pinActive && entityMatchesBoostPin(entity, boostPin);
+      if ((highlight || pinActive) && !isHi) ctx.globalAlpha = DIM;
       else ctx.globalAlpha = 1;
 
       if (entity.path && entity.path.length >= 2) {
@@ -231,11 +246,10 @@ export function attachEntityCanvas(
         const spread = Math.max(w, h) * 0.22;
         let bx = p.x + spread;
         const by = p.y - spread;
-        const follow = highlight && !isHi ? DIM : 1;
-        const sloopAlpha =
-          highlight === BOOST_HIGHLIGHT.shards ? DIM : highlight === BOOST_HIGHLIGHT.somersloops ? 1 : follow;
-        const shardAlpha =
-          highlight === BOOST_HIGHLIGHT.somersloops ? DIM : highlight === BOOST_HIGHLIGHT.shards ? 1 : follow;
+        const follow = (highlight || pinActive) && !isHi ? DIM : 1;
+        const focus = boostDotFocus(highlight, pinActive ? boostPin : emptyBoostPin());
+        const sloopAlpha = focus === "shards" ? DIM : focus === "somersloops" ? 1 : follow;
+        const shardAlpha = focus === "somersloops" ? DIM : focus === "shards" ? 1 : follow;
         if (slooped) {
           ctx.globalAlpha = sloopAlpha;
           ctx.beginPath();
@@ -415,6 +429,10 @@ export function attachEntityCanvas(
     },
     setHighlight(key) {
       highlight = key;
+      draw();
+    },
+    setBoostPin(next) {
+      boostPin = next;
       draw();
     },
     setShowBoosts(on) {

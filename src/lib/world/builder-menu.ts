@@ -320,7 +320,24 @@ export const BOOST_HIGHLIGHT = {
   boosted: "prop:boosted",
 } as const;
 
-export type BoostPin = { somersloops: boolean; shards: boolean };
+export type BoostKind = "somersloops" | "shards";
+
+export type BoostKindPin = {
+  all: boolean;
+  types: string[];
+};
+
+export type BoostPin = {
+  somersloops: BoostKindPin;
+  shards: BoostKindPin;
+};
+
+export function emptyBoostPin(): BoostPin {
+  return {
+    somersloops: { all: false, types: [] },
+    shards: { all: false, types: [] },
+  };
+}
 
 export function entityHasSomersloops(entity: MapEntity): boolean {
   return (entity.somersloops ?? 0) > 0;
@@ -330,22 +347,88 @@ export function entityHasShards(entity: MapEntity): boolean {
   return (entity.powerShards ?? 0) > 0;
 }
 
-export function boostHighlightKey(pin: BoostPin): string | null {
-  if (pin.somersloops && pin.shards) return BOOST_HIGHLIGHT.boosted;
-  if (pin.somersloops) return BOOST_HIGHLIGHT.somersloops;
-  if (pin.shards) return BOOST_HIGHLIGHT.shards;
-  return null;
+export function boostKindIsPinned(kind: BoostKindPin): boolean {
+  return kind.all || kind.types.length > 0;
+}
+
+export function boostPinIsActive(pin: BoostPin): boolean {
+  return boostKindIsPinned(pin.somersloops) || boostKindIsPinned(pin.shards);
+}
+
+export function boostTypeIsPinned(kind: BoostKindPin, key: string): boolean {
+  return kind.all || kind.types.includes(key);
+}
+
+export function boostTypeHighlightKey(kind: BoostKind, key: string): string {
+  return `${BOOST_HIGHLIGHT[kind]}:${key}`;
+}
+
+export function toggleBoostKindAll(pin: BoostPin, kind: BoostKind): BoostPin {
+  const current = pin[kind];
+  return {
+    ...pin,
+    [kind]: current.all ? { all: false, types: [] } : { all: true, types: [] },
+  };
+}
+
+export function toggleBoostKindType(pin: BoostPin, kind: BoostKind, key: string): BoostPin {
+  const current = pin[kind];
+  if (current.all) {
+    return { ...pin, [kind]: { all: false, types: [key] } };
+  }
+  const types = current.types.includes(key)
+    ? current.types.filter((item) => item !== key)
+    : [...current.types, key];
+  return { ...pin, [kind]: { all: false, types } };
+}
+
+export function entityMatchesBoostPin(entity: MapEntity, pin: BoostPin): boolean {
+  const key = layerKey(entity);
+  if (entityHasSomersloops(entity) && boostTypeIsPinned(pin.somersloops, key)) return true;
+  if (entityHasShards(entity) && boostTypeIsPinned(pin.shards, key)) return true;
+  return false;
 }
 
 export function isBoostHighlight(highlight: string | null): boolean {
+  if (!highlight) return false;
   return (
+    highlight === BOOST_HIGHLIGHT.boosted ||
     highlight === BOOST_HIGHLIGHT.somersloops ||
     highlight === BOOST_HIGHLIGHT.shards ||
-    highlight === BOOST_HIGHLIGHT.boosted
+    highlight.startsWith(`${BOOST_HIGHLIGHT.somersloops}:`) ||
+    highlight.startsWith(`${BOOST_HIGHLIGHT.shards}:`)
   );
 }
 
+export function boostDotFocus(
+  highlight: string | null,
+  pin: BoostPin,
+): "somersloops" | "shards" | "both" | null {
+  if (highlight) {
+    if (highlight === BOOST_HIGHLIGHT.boosted) return "both";
+    if (highlight === BOOST_HIGHLIGHT.somersloops || highlight.startsWith(`${BOOST_HIGHLIGHT.somersloops}:`)) {
+      return "somersloops";
+    }
+    if (highlight === BOOST_HIGHLIGHT.shards || highlight.startsWith(`${BOOST_HIGHLIGHT.shards}:`)) {
+      return "shards";
+    }
+    return null;
+  }
+  const sloops = boostKindIsPinned(pin.somersloops);
+  const shards = boostKindIsPinned(pin.shards);
+  if (sloops && shards) return "both";
+  if (sloops) return "somersloops";
+  if (shards) return "shards";
+  return null;
+}
+
 export function matchesLayerHighlight(entity: MapEntity, highlight: string): boolean {
+  if (highlight.startsWith(`${BOOST_HIGHLIGHT.somersloops}:`)) {
+    return entityHasSomersloops(entity) && layerKey(entity) === highlight.slice(BOOST_HIGHLIGHT.somersloops.length + 1);
+  }
+  if (highlight.startsWith(`${BOOST_HIGHLIGHT.shards}:`)) {
+    return entityHasShards(entity) && layerKey(entity) === highlight.slice(BOOST_HIGHLIGHT.shards.length + 1);
+  }
   if (highlight === BOOST_HIGHLIGHT.somersloops) return entityHasSomersloops(entity);
   if (highlight === BOOST_HIGHLIGHT.shards) return entityHasShards(entity);
   if (highlight === BOOST_HIGHLIGHT.boosted) return entityHasSomersloops(entity) || entityHasShards(entity);

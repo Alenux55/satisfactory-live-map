@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Layers, Sparkles } from "lucide-react";
+import { Layers, Sparkles, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
@@ -9,12 +9,20 @@ import { WikiIcon } from "@/components/map/wiki-icon";
 import {
   BOOST_HIGHLIGHT,
   BUILDER_MENU,
+  boostPinIsActive,
+  boostTypeHighlightKey,
+  boostTypeIsPinned,
   categoryHighlightKey,
+  entityMatchesBoostPin,
   layerIcons,
   layerKey,
   layerLabel,
   subcategoryHighlightKey,
   subcategoryId,
+  toggleBoostKindAll,
+  toggleBoostKindType,
+  type BoostKind,
+  type BoostKindPin,
   type BoostPin,
 } from "@/lib/world/builder-menu";
 import { CATEGORY_COLORS } from "@/lib/world/categorize";
@@ -23,6 +31,37 @@ import { DEFAULT_LAYERS, type EntityCategory, type MapEntity } from "@/lib/world
 import { iconCandidatesForBuilding, iconCandidatesForResource } from "@/lib/world/icons";
 import { pioneerColor } from "@/lib/world/pioneer-color";
 import { cn } from "@/lib/utils";
+
+type BoostTypeRow = {
+  key: string;
+  label: string;
+  icons: string[];
+  color?: string;
+  buildings: number;
+  items: number;
+};
+
+function addBoostTypeRow(index: Map<string, BoostTypeRow>, entity: MapEntity, items: number) {
+  const key = layerKey(entity);
+  let row = index.get(key);
+  if (!row) {
+    row = {
+      key,
+      label: layerLabel(entity),
+      icons: layerIcons(entity),
+      color: entity.category === "player" ? pioneerColor(entity.id) : undefined,
+      buildings: 0,
+      items: 0,
+    };
+    index.set(key, row);
+  }
+  row.buildings += 1;
+  row.items += items;
+}
+
+function sortBoostTypeRows(rows: BoostTypeRow[]): BoostTypeRow[] {
+  return rows.sort((a, b) => b.items - a.items || b.buildings - a.buildings || a.label.localeCompare(b.label));
+}
 
 type LayerFlags = Record<EntityCategory, boolean>;
 
@@ -107,19 +146,30 @@ export function LayersPanel({
     let sloopItems = 0;
     let shardBuildings = 0;
     let shardItems = 0;
+    const sloopIndex = new Map<string, BoostTypeRow>();
+    const shardIndex = new Map<string, BoostTypeRow>();
     for (const entity of entities.values()) {
       const sloops = entity.somersloops ?? 0;
       const shards = entity.powerShards ?? 0;
       if (sloops > 0) {
         sloopBuildings += 1;
         sloopItems += sloops;
+        addBoostTypeRow(sloopIndex, entity, sloops);
       }
       if (shards > 0) {
         shardBuildings += 1;
         shardItems += shards;
+        addBoostTypeRow(shardIndex, entity, shards);
       }
     }
-    return { sloopBuildings, sloopItems, shardBuildings, shardItems };
+    return {
+      sloopBuildings,
+      sloopItems,
+      shardBuildings,
+      shardItems,
+      sloopRows: sortBoostTypeRows([...sloopIndex.values()]),
+      shardRows: sortBoostTypeRows([...shardIndex.values()]),
+    };
   }, [entities]);
 
   const setCategory = (id: EntityCategory, on: boolean) => {
@@ -175,6 +225,42 @@ export function LayersPanel({
     );
   };
 
+  const applyBoostPin = (next: BoostPin) => {
+    onBoostPin(next);
+    if (!boostPinIsActive(next)) return;
+    if (!showBoosts) onShowBoosts(true);
+    const nextLayers = { ...layers };
+    const types = new Set(hidden);
+    const subs = new Set(hiddenSubSet);
+    const opened = new Set<EntityCategory>();
+    let layersChanged = false;
+    for (const entity of entities.values()) {
+      if (!entityMatchesBoostPin(entity, next)) continue;
+      if (nextLayers[entity.category] === false) {
+        nextLayers[entity.category] = true;
+        layersChanged = true;
+      }
+      subs.delete(`${entity.category}:${subcategoryId(entity)}`);
+      types.delete(layerKey(entity));
+      if (entity.category === "resource") {
+        const key = layerKey(entity);
+        types.delete(`${key}:claimed`);
+        types.delete(`${key}:unclaimed`);
+      }
+      opened.add(entity.category);
+    }
+    if (layersChanged) onLayers(nextLayers);
+    if (subs.size !== hiddenSubSet.size) onHiddenSubs([...subs]);
+    if (types.size !== hidden.size) onHiddenTypes([...types]);
+    if (opened.size > 0) {
+      setOpenCats((current) => {
+        const merged = new Set(current);
+        for (const id of opened) merged.add(id);
+        return merged;
+      });
+    }
+  };
+
   return (
     <ScrollArea className="h-full min-h-0 w-full min-w-0 flex-1 overflow-x-hidden">
       <div className="flex min-w-0 flex-col gap-3 px-3 py-4 pb-10">
@@ -199,7 +285,7 @@ export function LayersPanel({
         <BoostsSection
           stats={boostStats}
           pin={boostPin}
-          onPin={onBoostPin}
+          onPin={applyBoostPin}
           onHover={onHover}
           enabled={showBoosts}
           onEnabled={onShowBoosts}
@@ -373,7 +459,14 @@ function BoostsSection({
   enabled,
   onEnabled,
 }: {
-  stats: { sloopBuildings: number; sloopItems: number; shardBuildings: number; shardItems: number };
+  stats: {
+    sloopBuildings: number;
+    sloopItems: number;
+    shardBuildings: number;
+    shardItems: number;
+    sloopRows: BoostTypeRow[];
+    shardRows: BoostTypeRow[];
+  };
   pin: BoostPin;
   onPin: (pin: BoostPin) => void;
   onHover: (key: string | null) => void;
@@ -389,11 +482,7 @@ function BoostsSection({
     onPin(next);
   };
   return (
-    <div
-      className="min-w-0 overflow-x-hidden rounded-lg border border-border/70 bg-card/40"
-      onMouseEnter={() => hover(BOOST_HIGHLIGHT.boosted)}
-      onMouseLeave={() => onHover(null)}
-    >
+    <div className="min-w-0 overflow-x-hidden rounded-lg border border-border/70 bg-card/40" onMouseLeave={() => onHover(null)}>
       <div className="flex min-w-0 flex-col gap-1 rounded-md px-2 py-1.5 hover:bg-muted/40">
         <div className="flex min-w-0 items-center gap-2">
           <p className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium">
@@ -411,35 +500,113 @@ function BoostsSection({
           />
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Switch hides the dots. Hover to highlight, click to pin. Buildings stay in Production and Power.
+          Switch hides the dots. Pin a type or the whole group. Pinning turns on involved layers.
         </p>
       </div>
       <div className="flex min-w-0 flex-col gap-1 border-t border-border/60 px-2 py-2">
-        <BoostRow
+        <BoostKindGroup
+          kind="somersloops"
           label="Somersloops"
           icons={["Somersloop.png"]}
           buildings={stats.sloopBuildings}
           items={stats.sloopItems}
-          itemLabel="somersloops"
-          active={pin.somersloops}
-          highlightKey={BOOST_HIGHLIGHT.somersloops}
-          hoverLeaveKey={BOOST_HIGHLIGHT.boosted}
+          rows={stats.sloopRows}
+          pin={pin.somersloops}
+          onToggleAll={() => pinRow(toggleBoostKindAll(pin, "somersloops"))}
+          onToggleType={(key) => pinRow(toggleBoostKindType(pin, "somersloops", key))}
           onHover={hover}
-          onToggle={() => pinRow({ ...pin, somersloops: !pin.somersloops })}
         />
-        <BoostRow
+        <BoostKindGroup
+          kind="shards"
           label="Power shards"
           icons={["Power_Shard.png", "Crystal_Shard.png"]}
           buildings={stats.shardBuildings}
           items={stats.shardItems}
-          itemLabel="power shards"
-          active={pin.shards}
-          highlightKey={BOOST_HIGHLIGHT.shards}
-          hoverLeaveKey={BOOST_HIGHLIGHT.boosted}
+          rows={stats.shardRows}
+          pin={pin.shards}
+          onToggleAll={() => pinRow(toggleBoostKindAll(pin, "shards"))}
+          onToggleType={(key) => pinRow(toggleBoostKindType(pin, "shards", key))}
           onHover={hover}
-          onToggle={() => pinRow({ ...pin, shards: !pin.shards })}
         />
       </div>
+    </div>
+  );
+}
+
+function BoostKindGroup({
+  kind,
+  label,
+  icons,
+  buildings,
+  items,
+  rows,
+  pin,
+  onToggleAll,
+  onToggleType,
+  onHover,
+}: {
+  kind: BoostKind;
+  label: string;
+  icons: string[];
+  buildings: number;
+  items: number;
+  rows: BoostTypeRow[];
+  pin: BoostKindPin;
+  onToggleAll: () => void;
+  onToggleType: (key: string) => void;
+  onHover: (key: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const parentKey = BOOST_HIGHLIGHT[kind];
+  return (
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-center gap-1">
+        <button
+          type="button"
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          aria-expanded={open}
+          aria-label={open ? `Hide ${label} types` : `Show ${label} types`}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <ChevronDown className={cn("size-3.5 transition-transform", open ? "" : "-rotate-90")} />
+        </button>
+        <BoostRow
+          label={label}
+          icons={icons}
+          buildings={buildings}
+          items={items}
+          itemLabel={label.toLowerCase()}
+          active={pin.all}
+          highlightKey={parentKey}
+          hoverLeaveKey={null}
+          onHover={onHover}
+          onToggle={onToggleAll}
+        />
+      </div>
+      {open ? (
+        <div className="mt-1 flex min-w-0 flex-col gap-0.5 pl-7">
+          {rows.length ? (
+            rows.map((row) => (
+              <BoostRow
+                key={row.key}
+                label={row.label}
+                icons={row.icons}
+                color={row.color}
+                buildings={row.buildings}
+                items={row.items}
+                itemLabel={label.toLowerCase()}
+                active={boostTypeIsPinned(pin, row.key)}
+                highlightKey={boostTypeHighlightKey(kind, row.key)}
+                hoverLeaveKey={parentKey}
+                onHover={onHover}
+                onToggle={() => onToggleType(row.key)}
+              />
+            ))
+          ) : (
+            <p className="px-1 py-0.5 text-[11px] text-muted-foreground">None on this map.</p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -447,6 +614,7 @@ function BoostsSection({
 function BoostRow({
   label,
   icons,
+  color,
   buildings,
   items,
   itemLabel,
@@ -458,12 +626,13 @@ function BoostRow({
 }: {
   label: string;
   icons: string[];
+  color?: string;
   buildings: number;
   items: number;
   itemLabel: string;
   active: boolean;
   highlightKey: string;
-  hoverLeaveKey: string;
+  hoverLeaveKey: string | null;
   onHover: (key: string | null) => void;
   onToggle: () => void;
 }) {
@@ -471,15 +640,19 @@ function BoostRow({
     <button
       type="button"
       className={cn(
-        "flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-muted/60",
+        "flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-muted/60",
         active ? "bg-primary/20" : "",
       )}
-      title={`${buildings} buildings, ${items} ${itemLabel}. Hover to highlight, click to pin.`}
+      title={`${buildings} ${label}, ${items} ${itemLabel}. Hover to highlight, click to pin.`}
       onMouseEnter={() => onHover(highlightKey)}
       onMouseLeave={() => onHover(hoverLeaveKey)}
       onClick={onToggle}
     >
-      <WikiIcon candidates={icons} label={label} className="size-5 shrink-0" />
+      {color ? (
+        <span className="size-5 shrink-0 rounded-sm border border-border/70" style={{ background: color }} />
+      ) : (
+        <WikiIcon candidates={icons} label={label} className="size-5 shrink-0" />
+      )}
       <span className="min-w-0 flex-1 truncate text-[12px]">{label}</span>
       <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
         {buildings} · {items}

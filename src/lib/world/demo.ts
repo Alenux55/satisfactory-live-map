@@ -90,6 +90,7 @@ export function buildDemoWorld(tick: number): MapEntity[] {
     machine("Char_Player", "player", OX + 12 + Math.sin(t / 2) * 18, OY - 10 + Math.cos(t / 3) * 8, t * 25, 2, 2, {
       id: "demo:player",
       label: "Pioneer",
+      somersloops: 1,
     }),
     machine("Crate", "crates", OX + 28, OY - 18, 0, 3, 3, {
       id: "demo:crate:dismantle",

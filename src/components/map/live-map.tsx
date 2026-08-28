@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Menu, Layers } from "lucide-react";
 import type { ImageOverlay, Map as LeafletMap } from "leaflet";
 import { applyDelta } from "@/lib/world/diff";
-import { boostHighlightKey, isBoostHighlight } from "@/lib/world/builder-menu";
+import { emptyBoostPin, isBoostHighlight } from "@/lib/world/builder-menu";
 import {
   GRID_METERS,
   latLngToWorld,
@@ -51,7 +51,7 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
   const [hiddenTypes, setHiddenTypes] = useState<string[]>(initialUser.prefs.hiddenTypes ?? []);
   const [hiddenSubs, setHiddenSubs] = useState<string[]>(initialUser.prefs.hiddenSubs ?? []);
   const [highlight, setHighlight] = useState<string | null>(null);
-  const [boostPin, setBoostPin] = useState({ somersloops: false, shards: false });
+  const [boostPin, setBoostPin] = useState(emptyBoostPin);
   const [showBoosts, setShowBoosts] = useState(initialUser.prefs.showBoosts !== false);
   const [account, setAccount] = useState<PublicUser | null>(initialUser);
   const [prefsReady] = useState(true);
@@ -180,8 +180,12 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
 
   useEffect(() => {
     const hover = highlight && (!isBoostHighlight(highlight) || showBoosts) ? highlight : null;
-    canvasRef.current?.setHighlight(hover ?? (showBoosts ? boostHighlightKey(boostPin) : null));
-  }, [highlight, boostPin, showBoosts]);
+    canvasRef.current?.setHighlight(hover);
+  }, [highlight, showBoosts]);
+
+  useEffect(() => {
+    canvasRef.current?.setBoostPin(boostPin);
+  }, [boostPin]);
 
   useEffect(() => {
     canvasRef.current?.setShowBoosts(showBoosts);
@@ -256,6 +260,7 @@ export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
       canvas.setHiddenTypes(hiddenTypes);
       canvas.setHiddenSubs(hiddenSubs);
       canvas.setShowBoosts(showBoosts);
+      canvas.setBoostPin(boostPin);
       canvas.setEntities(entitiesRef.current);
       canvasRef.current = canvas;
 
