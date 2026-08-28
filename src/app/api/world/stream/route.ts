@@ -9,7 +9,6 @@ export async function GET(request: Request) {
   const user = await requireUser();
   if (user instanceof Response) return user;
   const hub = await hubForRequest(request);
-  await hub.whenReady();
   logger.info("sse connect", { serverId: hub.getEntry().id });
   const encoder = new TextEncoder();
   let unsubscribe = () => {};

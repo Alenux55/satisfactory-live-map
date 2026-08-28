@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { countCategories, diffWorld } from "./diff";
-import { persistHistory } from "./history";
+import { persistHistory, snapshotAt } from "./history";
 import { buildDemoWorld, DEMO_HEADER } from "./demo";
 import { parseSaveAsync } from "./parse-async";
 import { logger, memorySnapshot } from "@/lib/log";
@@ -30,6 +31,17 @@ import {
 const DATA_DIR = path.join(process.cwd(), "data");
 export const DEFAULT_SAVES_DIR = path.join(DATA_DIR, "saves");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
+const LIVE_DIR = path.join(DATA_DIR, "live");
+/** SSE JSON of a 400k-entity first commit would freeze the process and the tab. */
+const SSE_INLINE_DELTA_LIMIT = 4000;
+
+type LiveCacheMeta = {
+  rev: number;
+  size: number;
+  mtimeMs: number;
+  hash: string;
+  lastChangeAt: number | null;
+};
 
 type Listener = (event: string, data: unknown) => void;
 
@@ -68,10 +80,17 @@ export class WorldHub {
   private skippedUnchanged = false;
   private lastDelta: HubStatus["lastDelta"] = null;
   private ready: Promise<void>;
+  private snapshotCache: { rev: number; gzip: Buffer } | null = null;
 
   constructor(entry: ServerEntry, pollIntervalSeconds: number) {
     this.entry = { ...entry };
     this.pollIntervalSeconds = nearestPollInterval(pollIntervalSeconds);
+    if (entry.kind === "watch") {
+      this.status = "waiting";
+      this.progress = 0;
+      this.progressMessage = "Starting save watch…";
+      this.header = null;
+    }
     logger.info("world hub created", {
       pid: process.pid,
       serverId: entry.id,
@@ -115,6 +134,28 @@ export class WorldHub {
       parsedMs: this.lastDelta?.parsedMs ?? 0,
       entityCount: entities.length,
     };
+  }
+
+  /** Gzipped JSON of the current snapshot, reused until `rev` changes. */
+  getSerializedSnapshot(): { rev: number; gzip: Buffer } {
+    if (this.snapshotCache?.rev === this.rev) return this.snapshotCache;
+    const started = Date.now();
+    const snapshot = this.getSnapshot();
+    const json = JSON.stringify(snapshot);
+    const gzip = gzipSync(json, { level: 4 });
+    const meta = {
+      rev: snapshot.rev,
+      entities: snapshot.entityCount,
+      bytes: json.length,
+      gzipBytes: gzip.length,
+      ms: Date.now() - started,
+      serverId: this.entry.id,
+      ...memorySnapshot(),
+    };
+    if (json.length > 1_000_000) logger.info("snapshot serialized", meta);
+    else logger.debug("snapshot serialized", meta);
+    this.snapshotCache = { rev: this.rev, gzip };
+    return this.snapshotCache;
   }
 
   getStatus(): HubStatus {
@@ -242,11 +283,150 @@ export class WorldHub {
         0,
       );
       this.status = "ready";
-    } else {
-      await this.tick();
     }
     this.restartTimer();
     this.restartFolderWatch();
+    // Restore the last map and parse in the background so HTTP/SSE are not blocked.
+    if (this.entry.kind !== "demo") {
+      setImmediate(() => {
+        void this.restoreThenWatch();
+      });
+    }
+  }
+
+  private liveCacheId(): string {
+    return this.entry.id.replace(/[^\w.-]+/g, "_");
+  }
+
+  private emitRefetch(): void {
+    const source = this.source ?? {
+      kind: "watch" as const,
+      name: this.entry.name,
+      sizeBytes: this.lastSize,
+      hash: this.lastHash || "restored",
+      mtimeMs: this.lastMtime || Date.now(),
+    };
+    const payload: WorldDelta = {
+      rev: this.rev,
+      fromRev: 0,
+      added: [],
+      updated: [],
+      removed: [],
+      header: this.header,
+      counts: this.entities.size ? countCategories(this.entities.values()) : { ...EMPTY_COUNTS },
+      source,
+      parsedMs: 0,
+      skipped: false,
+      entityCount: this.entities.size,
+      refetch: true,
+    };
+    this.emit("delta", payload);
+  }
+
+  private persistLiveCache(): void {
+    if (this.entry.kind === "demo" || !this.snapshotCache || this.entities.size === 0) return;
+    const gzip = this.snapshotCache.gzip;
+    const meta: LiveCacheMeta = {
+      rev: this.rev,
+      size: this.lastSize,
+      mtimeMs: this.lastMtime,
+      hash: this.lastHash,
+      lastChangeAt: this.lastChangeAt,
+    };
+    const id = this.liveCacheId();
+    void (async () => {
+      try {
+        await fs.mkdir(LIVE_DIR, { recursive: true });
+        await fs.writeFile(path.join(LIVE_DIR, `${id}.json.gz`), gzip);
+        await fs.writeFile(path.join(LIVE_DIR, `${id}.meta.json`), JSON.stringify(meta));
+      } catch (error) {
+        logger.warn("live cache write failed", {
+          serverId: this.entry.id,
+          err: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
+  }
+
+  private async restoreFromLiveCache(): Promise<boolean> {
+    const id = this.liveCacheId();
+    try {
+      const [gzip, metaRaw] = await Promise.all([
+        fs.readFile(path.join(LIVE_DIR, `${id}.json.gz`)),
+        fs.readFile(path.join(LIVE_DIR, `${id}.meta.json`), "utf8"),
+      ]);
+      const meta = JSON.parse(metaRaw) as LiveCacheMeta;
+      const snapshot = JSON.parse(gunzipSync(gzip).toString("utf8")) as WorldSnapshot;
+      if (!snapshot.entities?.length) return false;
+      this.entities = toMap(snapshot.entities);
+      this.header = snapshot.header;
+      this.source = snapshot.source;
+      this.rev = snapshot.rev || meta.rev || 1;
+      this.lastHash = meta.hash ?? "";
+      this.lastSize = meta.size ?? 0;
+      this.lastMtime = meta.mtimeMs ?? 0;
+      this.lastChangeAt = meta.lastChangeAt ?? snapshot.source?.mtimeMs ?? null;
+      this.snapshotCache = { rev: this.rev, gzip };
+      this.status = "ready";
+      this.progress = 1;
+      this.progressMessage = "Restored last live map — checking save…";
+      this.emit("status", this.getStatus());
+      this.emitRefetch();
+      logger.info("live cache restored", {
+        serverId: this.entry.id,
+        rev: this.rev,
+        entities: this.entities.size,
+        ...memorySnapshot(),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async restoreFromHistory(): Promise<boolean> {
+    try {
+      const snap = await snapshotAt(this.entry.id, Date.now());
+      if (!snap || snap.entities.length === 0) return false;
+      this.entities = toMap(snap.entities);
+      this.header = snap.header;
+      this.rev = snap.rev || 1;
+      this.lastChangeAt = snap.t;
+      this.snapshotCache = null;
+      this.status = "ready";
+      this.progress = 1;
+      this.progressMessage = "Restored last live map — checking save…";
+      this.getSerializedSnapshot();
+      this.persistLiveCache();
+      this.emit("status", this.getStatus());
+      this.emitRefetch();
+      logger.info("history snapshot restored", {
+        serverId: this.entry.id,
+        rev: this.rev,
+        entities: this.entities.size,
+        ...memorySnapshot(),
+      });
+      return true;
+    } catch (error) {
+      logger.warn("history snapshot restore failed", {
+        serverId: this.entry.id,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  private async restoreThenWatch(): Promise<void> {
+    this.progressMessage = "Loading last live map…";
+    this.emit("status", this.getStatus());
+    const restored = (await this.restoreFromLiveCache()) || (await this.restoreFromHistory());
+    if (!restored) {
+      this.progressMessage = this.entry.saveFile
+        ? `Watching ${path.basename(this.entry.saveFile)}`
+        : `Watching ${this.entry.savesDir} for a .sav file`;
+      this.emit("status", this.getStatus());
+    }
+    await this.tick();
   }
 
   private tickDemo(): void {
@@ -429,6 +609,8 @@ export class WorldHub {
       throw new Error(`Parse of ${name} produced no buildings; treating as an incomplete write`);
     }
     this.lastHash = hash;
+    this.lastSize = bytes.byteLength;
+    this.lastMtime = mtimeMs;
     this.commitEntities(
       parsed.entities,
       parsed.header,
@@ -464,11 +646,13 @@ export class WorldHub {
     if (!changed && this.rev > 0) {
       this.skippedUnchanged = true;
       this.lastDelta = { added: 0, updated: 0, removed: 0, parsedMs };
+      this.persistLiveCache();
       logger.debug("delta empty after parse", { parsedMs, entities: list.length });
       return;
     }
     const fromRev = this.rev;
     this.rev += 1;
+    this.snapshotCache = null;
     this.lastChangeAt = Date.now();
     this.skippedUnchanged = false;
     this.lastDelta = {
@@ -486,20 +670,25 @@ export class WorldHub {
       parsedMs,
       entities: this.entities.size,
     });
+    const inline =
+      diff.added.length + diff.updated.length + diff.removed.length <= SSE_INLINE_DELTA_LIMIT;
     const payload: WorldDelta = {
       rev: this.rev,
       fromRev,
-      added: diff.added,
-      updated: diff.updated,
-      removed: diff.removed,
+      added: inline ? diff.added : [],
+      updated: inline ? diff.updated : [],
+      removed: inline ? diff.removed : [],
       header,
       counts: countCategories(this.entities.values()),
       source,
       parsedMs,
       skipped: false,
       entityCount: this.entities.size,
+      refetch: !inline,
     };
     this.emit("delta", payload);
+    this.getSerializedSnapshot();
+    this.persistLiveCache();
     if (this.entry.kind !== "demo") {
       persistHistory({
         serverId: this.entry.id,

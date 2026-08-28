@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Slider } from "@/components/ui/slider";
+import { BoundedRangeSlider, Slider } from "@/components/ui/slider";
 import { displayName } from "@/lib/world/categorize";
 import { formatBytes, formatDuration, formatInterval } from "@/lib/world/coords";
 import { RESOURCE_TYPE_LABELS } from "@/lib/world/resource";
@@ -34,6 +34,15 @@ import {
   lookupRecipe,
   perMinute,
 } from "@/lib/world/recipes";
+
+const STATUS_LABEL: Record<string, string> = {
+  idle: "Starting",
+  waiting: "Waiting",
+  hashing: "Hashing",
+  parsing: "Parsing",
+  ready: "Ready",
+  error: "Error",
+};
 
 function parseHeight(raw: string, fallback: number): number {
   const parsed = Number(raw);
@@ -161,7 +170,9 @@ export function ControlPanel({
             <BrandMark />
             <Badge variant={live ? "default" : "secondary"} className="gap-1 font-mono text-[10px]">
               <Radio className={live ? "size-3 animate-pulse" : "size-3"} />
-              {status?.status ?? "boot"}
+              {status
+                ? STATUS_LABEL[status.status] ?? status.status
+                : "Starting"}
             </Badge>
           </div>
           <h1 className="mt-1 font-heading text-lg leading-tight text-balance">Live factory map</h1>
@@ -488,18 +499,13 @@ export function ControlPanel({
               onCommit={(hi) => onZRange(zLower, hi)}
             />
           </div>
-          <Slider
+          <BoundedRangeSlider
             min={zExtent.min}
             max={zExtent.max}
             step={1}
-            minStepsBetweenThumbs={1}
-            value={[Math.min(zLower, zUpper), Math.max(zLower, zUpper)]}
-            onValueChange={(value) => {
-              const lo = value[0] ?? zLower;
-              const hi = value[1] ?? zUpper;
-              if (lo > hi) return;
-              onZRange(lo, hi);
-            }}
+            lower={Math.min(zLower, zUpper)}
+            upper={Math.max(zLower, zUpper)}
+            onValueChange={onZRange}
           />
           <p className="text-[11px] text-muted-foreground">
             Hide buildings outside this Z range (sea level is 0). Type a height or drag the handles; they

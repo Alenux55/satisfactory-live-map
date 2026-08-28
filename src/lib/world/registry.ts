@@ -291,7 +291,7 @@ export class HubRegistry {
     this.hubs.delete(id);
   }
 
-  private async collapseDuplicateWatchServers(): Promise<number> {
+  private collapseDuplicateWatchServers(): { from: string; to: string }[] {
     const kept: ServerEntry[] = [];
     const discarded: { from: string; to: string }[] = [];
     for (const server of this.config.servers) {
@@ -308,10 +308,25 @@ export class HubRegistry {
       discarded.push({ from: server.id, to: prev.id });
     }
     this.config.servers = demoFirst(kept);
-    for (const item of discarded) {
-      await mergeHistoryInto(item.to, [item.from]);
+    return discarded;
+  }
+
+  private async maintainHistory(discarded: { from: string; to: string }[]): Promise<void> {
+    try {
+      for (const item of discarded) {
+        await mergeHistoryInto(item.to, [item.from]);
+      }
+      if (discarded.length > 0) {
+        logger.info("collapsed duplicate save folders in catalog", { collapsed: discarded.length });
+      }
+      await this.reclaimOrphanHistory();
+      const pruned = await pruneAllHistoryKeyframes();
+      if (pruned > 0) logger.info("pruned extra history keyframes", { pruned });
+    } catch (error) {
+      logger.warn("background history maintenance failed", {
+        err: error instanceof Error ? error.message : String(error),
+      });
     }
-    return discarded.length;
   }
 
   private async reclaimOrphanHistory(): Promise<void> {
@@ -343,13 +358,7 @@ export class HubRegistry {
       loaded = null;
     }
     this.config = applyEnvOverlay(migrateConfig(loaded));
-    const collapsed = await this.collapseDuplicateWatchServers();
-    if (collapsed > 0) {
-      logger.info("collapsed duplicate save folders in catalog", { collapsed });
-    }
-    await this.reclaimOrphanHistory();
-    const pruned = await pruneAllHistoryKeyframes();
-    if (pruned > 0) logger.info("pruned extra history keyframes", { pruned });
+    const discarded = this.collapseDuplicateWatchServers();
     await this.persist();
     logger.info("server catalog loaded", {
       poll: this.config.pollIntervalSeconds,
@@ -358,7 +367,9 @@ export class HubRegistry {
     for (const entry of this.config.servers) {
       this.hubs.set(entry.id, new WorldHub(entry, this.config.pollIntervalSeconds));
     }
-    await Promise.all([...this.hubs.values()].map((hub) => hub.whenReady()));
+    // History prune/reclaim can read large keyframes. Do it after the catalog is
+    // serving so the first browser open is not stuck on "boot".
+    void this.maintainHistory(discarded);
   }
 
   private async persist(): Promise<void> {

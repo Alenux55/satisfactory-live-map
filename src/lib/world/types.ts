@@ -115,6 +115,8 @@ export type WorldDelta = {
   parsedMs: number;
   skipped: boolean;
   entityCount: number;
+  /** When true, the delta is too large to send inline — refetch GET /api/world. */
+  refetch?: boolean;
 };
 
 export type HistoryMark = {

@@ -36,30 +36,35 @@ import {
   type PublicUser,
 } from "@/lib/auth/types";
 
-export function LiveMap() {
+export function LiveMap({ initialUser }: { initialUser: PublicUser }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<EntityCanvasHandle | null>(null);
   const entitiesRef = useRef(new Map<string, MapEntity>());
   const revRef = useRef(0);
-  const layersRef = useRef(DEFAULT_LAYERS);
+  const layersRef = useRef(initialUser.prefs.layers ?? DEFAULT_LAYERS);
 
   const [status, setStatus] = useState<HubStatus | null>(null);
   const [config, setConfig] = useState<HubConfig | null>(null);
-  const [serverId, setServerId] = useState(DEMO_SERVER_ID);
-  const [layers, setLayers] = useState(DEFAULT_LAYERS);
-  const [hiddenTypes, setHiddenTypes] = useState<string[]>([]);
-  const [hiddenSubs, setHiddenSubs] = useState<string[]>([]);
+  const [serverId, setServerId] = useState(initialUser.prefs.serverId || DEMO_SERVER_ID);
+  const [layers, setLayers] = useState(initialUser.prefs.layers ?? DEFAULT_LAYERS);
+  const [hiddenTypes, setHiddenTypes] = useState<string[]>(initialUser.prefs.hiddenTypes ?? []);
+  const [hiddenSubs, setHiddenSubs] = useState<string[]>(initialUser.prefs.hiddenSubs ?? []);
   const [highlight, setHighlight] = useState<string | null>(null);
-  const [account, setAccount] = useState<PublicUser | null>(null);
-  const [prefsReady, setPrefsReady] = useState(false);
+  const [account, setAccount] = useState<PublicUser | null>(initialUser);
+  const [prefsReady] = useState(true);
   const [selected, setSelected] = useState<MapEntity | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [terrainReady, setTerrainReady] = useState(false);
-  const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
-  const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
+  const [leftWidth, setLeftWidth] = useState(
+    clampSidebarWidth(initialUser.prefs.leftWidth, DEFAULT_LEFT_WIDTH),
+  );
+  const [rightWidth, setRightWidth] = useState(
+    clampSidebarWidth(initialUser.prefs.rightWidth, DEFAULT_RIGHT_WIDTH),
+  );
   const [timelineOffset, setTimelineOffset] = useState(116);
+  const [timelineEnabled, setTimelineEnabled] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
   const overlaysRef = useRef<{ schematic: ImageOverlay; terrain: ImageOverlay | null } | null>(null);
   const zTouchedRef = useRef(false);
@@ -79,13 +84,6 @@ export function LiveMap() {
         return;
       }
       setAccount(body.user);
-      setServerId(body.user.prefs.serverId || DEMO_SERVER_ID);
-      setLayers(body.user.prefs.layers ?? DEFAULT_LAYERS);
-      setHiddenTypes(body.user.prefs.hiddenTypes ?? []);
-      setHiddenSubs(body.user.prefs.hiddenSubs ?? []);
-      setLeftWidth(clampSidebarWidth(body.user.prefs.leftWidth, DEFAULT_LEFT_WIDTH));
-      setRightWidth(clampSidebarWidth(body.user.prefs.rightWidth, DEFAULT_RIGHT_WIDTH));
-      setPrefsReady(true);
     })();
   }, []);
 
@@ -129,16 +127,23 @@ export function LiveMap() {
     }
   }, []);
 
-  const loadSnapshot = useCallback(async () => {
-    const response = await fetch(`/api/world?server=${encodeURIComponent(serverId)}`, { cache: "no-store" });
-    if (response.status === 401) {
-      window.location.href = "/login";
-      return;
+  const loadSnapshot = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await fetch(`/api/world?server=${encodeURIComponent(serverId)}`, {
+        cache: "no-store",
+        signal,
+      });
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      if (!response.ok) return;
+      const snapshot = (await response.json()) as WorldSnapshot;
+      revRef.current = snapshot.rev;
+      pushEntities(new Map(snapshot.entities.map((entity) => [entity.id, entity])));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
     }
-    if (!response.ok) return;
-    const snapshot = (await response.json()) as WorldSnapshot;
-    revRef.current = snapshot.rev;
-    pushEntities(new Map(snapshot.entities.map((entity) => [entity.id, entity])));
   }, [pushEntities, serverId]);
 
   const loadConfig = useCallback(async () => {
@@ -315,7 +320,11 @@ export function LiveMap() {
 
   useEffect(() => {
     if (!prefsReady) return;
-    void loadSnapshot();
+    const abort = new AbortController();
+    setTimelineEnabled(false);
+    void loadSnapshot(abort.signal).finally(() => {
+      if (!abort.signal.aborted) setTimelineEnabled(true);
+    });
     void loadConfig();
     const source = new EventSource(`/api/world/stream?server=${encodeURIComponent(serverId)}`);
     source.addEventListener("status", (event) => {
@@ -324,8 +333,8 @@ export function LiveMap() {
     source.addEventListener("delta", (event) => {
       const delta = JSON.parse((event as MessageEvent).data) as WorldDelta;
       if (!historyLiveRef.current) return;
-      if (delta.fromRev !== revRef.current) {
-        void loadSnapshot();
+      if (delta.refetch || delta.fromRev !== revRef.current) {
+        void loadSnapshot(abort.signal);
         return;
       }
       revRef.current = delta.rev;
@@ -336,7 +345,10 @@ export function LiveMap() {
         return delta.updated.find((entity) => entity.id === current.id) ?? current;
       });
     });
-    return () => source.close();
+    return () => {
+      abort.abort();
+      source.close();
+    };
   }, [loadConfig, loadSnapshot, prefsReady, pushEntities, serverId]);
 
   const patchConfig = async (patch: ConfigPatch) => {
@@ -415,8 +427,9 @@ export function LiveMap() {
       zUpper={zUpper}
       onZRange={(lo, hi) => {
         zTouchedRef.current = true;
-        setZLower(lo);
-        setZUpper(hi);
+        const nextLo = Math.min(lo, hi - 1);
+        setZLower(nextLo);
+        setZUpper(Math.max(hi, nextLo + 1));
       }}
       onZReset={() => {
         zTouchedRef.current = false;
@@ -495,14 +508,21 @@ export function LiveMap() {
           </div>
         </div>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 p-2">
-          <HistoryTimeline
-            serverId={serverId}
-            live={historyLive}
-            liveRev={status?.rev ?? 0}
-            onLiveChange={onHistoryLiveChange}
-            onSeek={onHistorySeek}
-            onHeight={setTimelineOffset}
-          />
+          {timelineEnabled ? (
+            <HistoryTimeline
+              serverId={serverId}
+              live={historyLive}
+              liveRev={status?.rev ?? 0}
+              onLiveChange={onHistoryLiveChange}
+              onSeek={onHistorySeek}
+              onHeight={setTimelineOffset}
+            />
+          ) : (
+            <div
+              className="pointer-events-none h-[88px] rounded-md border border-border/70 bg-background/80 text-[11px] text-muted-foreground backdrop-blur"
+              aria-hidden
+            />
+          )}
         </div>
       </div>
       <aside

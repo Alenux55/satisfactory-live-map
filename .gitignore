@@ -51,6 +51,7 @@ next-env.d.ts
 /data/invite.json
 /data/history/*
 !/data/history/.gitkeep
+/data/live/*
 /data/reset-tokens.json
 /data/auth-secret.txt
 /data/server.log
