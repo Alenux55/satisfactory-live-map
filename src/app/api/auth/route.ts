@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { isValidEmail, isValidUsername, verifyPassword } from "@/lib/auth/password";
 import { clearSessionCookie, setSessionCookie } from "@/lib/auth/session";
@@ -23,16 +24,59 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const loginHits = new Map<string, { count: number; resetAt: number }>();
+const resetHits = new Map<string, { count: number; resetAt: number }>();
 
-function loginAllowed(key: string): boolean {
+function compactHits(hits: Map<string, { count: number; resetAt: number }>, now: number): void {
+  if (hits.size < 1_000) return;
+  for (const [key, hit] of hits) {
+    if (hit.resetAt < now) hits.delete(key);
+  }
+}
+
+function rateAllowed(
+  hits: Map<string, { count: number; resetAt: number }>,
+  key: string,
+  limit: number,
+  windowMs: number,
+): boolean {
   const now = Date.now();
-  const hit = loginHits.get(key);
+  compactHits(hits, now);
+  const hit = hits.get(key);
+  if (!hit && hits.size >= 10_000) return false;
   if (!hit || hit.resetAt < now) {
-    loginHits.set(key, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    hits.set(key, { count: 1, resetAt: now + windowMs });
     return true;
   }
   hit.count += 1;
-  return hit.count <= 8;
+  return hit.count <= limit;
+}
+
+function loginAllowed(key: string): boolean {
+  return rateAllowed(loginHits, key, 8, 15 * 60 * 1000);
+}
+
+function rateKey(value: string): string {
+  return createHash("sha256").update(value.trim().toLowerCase()).digest("base64url");
+}
+
+function trustedClientAddress(request: Request): string | null {
+  if (process.env.FICSIT_TRUST_PROXY !== "1") return null;
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || request.headers.get("x-real-ip")?.trim() || null;
+}
+
+function passwordResetAllowed(request: Request, identifier: string): boolean {
+  const accountAllowed = rateAllowed(
+    resetHits,
+    `account:${rateKey(identifier)}`,
+    1,
+    5 * 60 * 1000,
+  );
+  const address = trustedClientAddress(request);
+  const addressAllowed = address
+    ? rateAllowed(resetHits, `address:${rateKey(address)}`, 10, 15 * 60 * 1000)
+    : true;
+  return accountAllowed && addressAllowed;
 }
 
 function mismatchPasswords(body: Record<string, unknown>, password: string): string | null {
@@ -156,7 +200,8 @@ export async function POST(request: Request) {
 
     if (action === "forgot") {
       const identifier = String(body.username ?? body.email ?? "").trim();
-      if (identifier && (await smtpConfigured())) {
+      const mailReady = await smtpConfigured();
+      if (identifier && mailReady && passwordResetAllowed(request, identifier)) {
         const user = identifier.includes("@")
           ? await getUserByEmail(identifier)
           : await getUserByUsername(identifier);
@@ -174,8 +219,8 @@ export async function POST(request: Request) {
       }
       return NextResponse.json({
         ok: true,
-        smtpConfigured: await smtpConfigured(),
-        message: (await smtpConfigured())
+        smtpConfigured: mailReady,
+        message: mailReady
           ? "If that account has an email address, a reset link is on its way."
           : "Password reset email is not configured. Ask an admin to set a new password.",
       });
