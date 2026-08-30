@@ -34,8 +34,9 @@ function enqueue<T>(op: () => Promise<T>): Promise<T> {
 async function readJson<T>(file: string, fallback: T): Promise<T> {
   try {
     return JSON.parse(await fs.readFile(file, "utf8")) as T;
-  } catch {
-    return fallback;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return fallback;
+    throw error;
   }
 }
 
@@ -89,8 +90,13 @@ function coerceUser(raw: unknown): UserRecord | null {
 }
 
 export async function listUsers(): Promise<UserRecord[]> {
-  const raw = await readJson<unknown[]>(USERS_PATH, []);
-  return Array.isArray(raw) ? raw.map(coerceUser).filter((user): user is UserRecord => user != null) : [];
+  const raw = await readJson<unknown>(USERS_PATH, []);
+  if (!Array.isArray(raw)) throw new Error("User store is corrupt: expected a JSON array");
+  const users = raw.map(coerceUser);
+  if (users.some((user) => user == null)) {
+    throw new Error("User store is corrupt: found an invalid user record");
+  }
+  return users as UserRecord[];
 }
 
 export async function userCount(): Promise<number> {
@@ -116,12 +122,48 @@ async function saveUsers(users: UserRecord[]): Promise<void> {
   await writeJson(USERS_PATH, users);
 }
 
-export async function createUser(input: {
+type NewUserInput = {
   username: string;
   email?: string | null;
   password: string;
   role: UserRole;
-}): Promise<UserRecord> {
+};
+
+function newUser(input: NewUserInput): Promise<UserRecord> {
+  return hashPassword(input.password).then((passwordHash) => ({
+    id: newId("usr"),
+    username: normalizeUsername(input.username),
+    email: normalizeEmail(input.email),
+    passwordHash,
+    role: input.role,
+    prefs: defaultPrefs(),
+    createdAt: Date.now(),
+  }));
+}
+
+export class SetupCompleteError extends Error {
+  constructor() {
+    super("Setup is already complete");
+    this.name = "SetupCompleteError";
+  }
+}
+
+export async function createFirstAdmin(
+  input: Omit<NewUserInput, "role">,
+): Promise<UserRecord> {
+  if (input.password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  }
+  return enqueue(async () => {
+    const users = await listUsers();
+    if (users.length > 0) throw new SetupCompleteError();
+    const user = await newUser({ ...input, role: "admin" });
+    await saveUsers([user]);
+    return user;
+  });
+}
+
+export async function createUser(input: NewUserInput): Promise<UserRecord> {
   if (input.password.length < MIN_PASSWORD_LENGTH) {
     throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
   }
@@ -131,15 +173,7 @@ export async function createUser(input: {
     const email = normalizeEmail(input.email);
     if (users.some((user) => user.username === username)) throw new Error("Username already exists");
     if (email && users.some((user) => user.email === email)) throw new Error("Email already exists");
-    const user: UserRecord = {
-      id: newId("usr"),
-      username,
-      email,
-      passwordHash: await hashPassword(input.password),
-      role: input.role,
-      prefs: defaultPrefs(),
-      createdAt: Date.now(),
-    };
+    const user = await newUser({ ...input, username, email });
     users.push(user);
     await saveUsers(users);
     return user;

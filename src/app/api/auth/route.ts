@@ -4,11 +4,13 @@ import { clearSessionCookie, setSessionCookie } from "@/lib/auth/session";
 import { inviteSignupEnabled, verifyViewerInvite } from "@/lib/auth/invite-store";
 import {
   consumeResetToken,
+  createFirstAdmin,
   createResetToken,
   createUser,
   getUserByEmail,
   getUserByUsername,
   setUserPassword,
+  SetupCompleteError,
   updateUser,
   userCount,
 } from "@/lib/auth/store";
@@ -59,9 +61,6 @@ export async function POST(request: Request) {
     const action = typeof body.action === "string" ? body.action : "";
 
     if (action === "setup") {
-      if ((await userCount()) > 0) {
-        return NextResponse.json({ error: "Setup is already complete" }, { status: 409 });
-      }
       const username = String(body.username ?? "");
       const password = String(body.password ?? "");
       const email = typeof body.email === "string" ? body.email : "";
@@ -76,12 +75,15 @@ export async function POST(request: Request) {
       if (email && !isValidEmail(email)) {
         return NextResponse.json({ error: "Invalid email" }, { status: 400 });
       }
-      const user = await createUser({
-        username,
-        email: email || null,
-        password,
-        role: "admin",
-      });
+      let user;
+      try {
+        user = await createFirstAdmin({ username, email: email || null, password });
+      } catch (error) {
+        if (error instanceof SetupCompleteError) {
+          return NextResponse.json({ error: error.message }, { status: 409 });
+        }
+        throw error;
+      }
       await setSessionCookie(user.id, request);
       logger.info("first admin created", { username: user.username });
       return NextResponse.json({ user: toPublicUser(user) });
